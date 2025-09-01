@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  body {
+    @apply bg-secondary-50 text-secondary-900;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200;
+  }
+  
+  .btn-secondary {
+    @apply bg-secondary-200 hover:bg-secondary-300 text-secondary-900 font-medium px-4 py-2 rounded-lg transition-colors duration-200;
+  }
+  
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-secondary-200 p-6;
+  }
+  
+  .input-field {
+    @apply w-full px-3 py-2 border border-secondary-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+  
+  .status-indicator {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .status-running {
+    @apply status-indicator bg-primary-100 text-primary-800;
+  }
+  
+  .status-completed {
+    @apply status-indicator bg-green-100 text-green-800;
+  }
+  
+  .status-failed {
+    @apply status-indicator bg-red-100 text-red-800;
+  }
+  
+  .status-pending {
+    @apply status-indicator bg-secondary-100 text-secondary-800;
+  }
+  
+  .progress-bar {
+    @apply w-full bg-secondary-200 rounded-full h-2;
+  }
+  
+  .progress-bar-fill {
+    @apply bg-primary-600 h-2 rounded-full transition-all duration-300 ease-out;
+  }
+}

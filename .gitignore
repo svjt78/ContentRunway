@@ -1,0 +1,76 @@
+# Operating System
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+thumbs.db
+Thumbs.db
+
+# IDE and Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Docker
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# Coverage reports
+coverage/
+*.lcov
+
+# AI and ML cache
+.cache/
+cache/
+.huggingface/
+models/
+*.model
+*.pkl
+*.pickle
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Redis dumps
+dump.rdb
+
+# Secrets and keys
+*.pem
+*.key
+*.crt
+*.cert
+secrets/
+credentials/

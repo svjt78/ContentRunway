@@ -1,0 +1,73 @@
+# SearXNG Configuration for ContentRunway
+# Optimized for programmatic trending content discovery
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "ContentRunway Search"
+  contact_url: false
+  enable_stats: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  max_page: 0
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "your-secret-key-here"  # Will be overridden by environment variable
+  base_url: false
+  image_proxy: false
+  http_protocol_version: "1.1"
+  method: "POST"
+
+ui:
+  static_use_hash: false
+  default_locale: "en"
+  query_in_title: false
+  infinite_scroll: false
+  center_alignment: false
+  cache_url: "cache"
+  search_on_category_select: true
+  hotkeys: default
+
+# Enable engines optimized for social media content discovery
+engines:
+  - name: google
+    engine: google
+    shortcut: go
+    use_mobile_ui: false
+    disabled: false
+
+  - name: bing
+    engine: bing
+    shortcut: bi
+    disabled: false
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+
+  # Disable engines not useful for trending content
+  - name: wikipedia
+    disabled: true
+    
+  - name: wikidata
+    disabled: true
+    
+  - name: openstreetmap
+    disabled: true
+
+categories_as_tabs:
+  general:
+    - google
+    - bing
+    - duckduckgo
+
+# Rate limiting for programmatic access
+limiter: false
+redis_url: "redis://redis:6379/1"
