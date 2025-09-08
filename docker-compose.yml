@@ -18,7 +18,7 @@ services:
     depends_on:
       - backend
     networks:
-      - contentrunway
+      - app-network
 
   # Backend - FastAPI with hot reloading
   backend:
@@ -46,7 +46,7 @@ services:
       milvus-standalone:
         condition: service_healthy
     networks:
-      - contentrunway
+      - app-network
 
   # LangGraph Worker - Dedicated pipeline execution
   langgraph-worker:
@@ -71,7 +71,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - contentrunway
+      - app-network
 
   # PostgreSQL Database with local volume
   postgres:
@@ -91,7 +91,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - contentrunway
+      - app-network
 
   # Redis Cache with persistent volume
   redis:
@@ -107,7 +107,7 @@ services:
       timeout: 5s
       retries: 3
     networks:
-      - contentrunway
+      - app-network
 
   # Milvus Vector Database
   etcd:
@@ -126,7 +126,7 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - contentrunway
+      - app-network
 
   minio:
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
@@ -142,7 +142,7 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - contentrunway
+      - app-network
 
   milvus-standalone:
     image: milvusdb/milvus:v2.3.0
@@ -167,7 +167,7 @@ services:
       - "etcd"
       - "minio"
     networks:
-      - contentrunway
+      - app-network
 
   # SearXNG Search Engine
   searxng:
@@ -182,7 +182,7 @@ services:
     depends_on:
       - redis
     networks:
-      - contentrunway
+      - app-network
     restart: unless-stopped
 
   # Nginx Reverse Proxy
@@ -197,7 +197,7 @@ services:
       - backend
       - searxng
     networks:
-      - contentrunway
+      - app-network
 
 volumes:
   postgres_data:
@@ -207,5 +207,5 @@ volumes:
   minio_data:
 
 networks:
-  contentrunway:
+  app-network:
     driver: bridge

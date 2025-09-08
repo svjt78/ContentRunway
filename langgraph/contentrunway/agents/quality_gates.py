@@ -2,8 +2,6 @@
 
 from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_anthropic import ChatAnthropic
 from langchain.schema import HumanMessage, SystemMessage
 import logging
 import asyncio
@@ -12,6 +10,7 @@ import json
 from datetime import datetime
 
 from ..state.pipeline_state import Draft, Source, ContentPipelineState
+from ..tools.langgraph_tools import LANGGRAPH_VALIDATION_TOOLS, validate_content, analyze_content_quality
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +260,7 @@ compliance_agent_instruction = f"""
 class FactCheckGateAgent:
     """Validates factual accuracy and verifies claims against sources."""
     
-    def __init__(self, model_name: str = "gpt-4"):
+    def __init__(self, model_name: str = "gpt-4", enable_tool_selection: bool = True):
         from app.services.rate_limiter import wrap_llm_with_caching
         
         base_llm = ChatOpenAI(
@@ -269,7 +268,13 @@ class FactCheckGateAgent:
             temperature=0.1,  # Very low temperature for factual accuracy
             max_tokens=3000
         )
-        self.llm = wrap_llm_with_caching(base_llm, "openai")
+        self.base_llm = wrap_llm_with_caching(base_llm, "openai")
+        
+        # Hybrid approach: bind validation tools for LLM-driven decisions
+        if enable_tool_selection:
+            self.llm = self.base_llm.bind_tools(LANGGRAPH_VALIDATION_TOOLS)
+        else:
+            self.llm = self.base_llm
     
     async def execute(self, draft: Draft, sources: List[Source]) -> Dict[str, Any]:
         """
@@ -605,7 +610,7 @@ class FactCheckGateAgent:
 class DomainExpertiseGateAgent:
     """Validates domain-specific expertise and technical accuracy."""
     
-    def __init__(self, model_name: str = "gpt-4"):
+    def __init__(self, model_name: str = "gpt-4", enable_tool_selection: bool = True):
         from app.services.rate_limiter import wrap_llm_with_caching
         
         base_llm = ChatOpenAI(
@@ -613,7 +618,13 @@ class DomainExpertiseGateAgent:
             temperature=0.2,  # Low temperature for technical accuracy
             max_tokens=3000
         )
-        self.llm = wrap_llm_with_caching(base_llm, "openai")
+        self.base_llm = wrap_llm_with_caching(base_llm, "openai")
+        
+        # Hybrid approach: bind validation tools for LLM-driven decisions
+        if enable_tool_selection:
+            self.llm = self.base_llm.bind_tools(LANGGRAPH_VALIDATION_TOOLS)
+        else:
+            self.llm = self.base_llm
         
         # Domain-specific expertise criteria
         self.domain_criteria = {
@@ -910,12 +921,18 @@ class DomainExpertiseGateAgent:
 class StyleCriticGateAgent:
     """Evaluates writing style, tone, and consistency."""
     
-    def __init__(self, model_name: str = "gpt-4"):
-        self.llm = ChatOpenAI(
+    def __init__(self, model_name: str = "gpt-4", enable_tool_selection: bool = True):
+        self.base_llm = ChatOpenAI(
             model=model_name,
             temperature=0.3,
             max_tokens=3000
         )
+        
+        # Hybrid approach: bind validation tools for LLM-driven decisions
+        if enable_tool_selection:
+            self.llm = self.base_llm.bind_tools(LANGGRAPH_VALIDATION_TOOLS)
+        else:
+            self.llm = self.base_llm
     
     async def execute(self, draft: Draft, state: ContentPipelineState) -> Dict[str, Any]:
         """
@@ -1259,13 +1276,19 @@ class StyleCriticGateAgent:
 class ComplianceGateAgent:
     """Validates content compliance with legal and ethical guidelines."""
     
-    def __init__(self, model_name: str = "claude-3-sonnet-20241022"):
-        # Use Claude for sensitive compliance checking
-        self.llm = ChatAnthropic(
+    def __init__(self, model_name: str = "gpt-4", enable_tool_selection: bool = True):
+        # Use OpenAI GPT-4 for sensitive compliance checking
+        self.base_llm = ChatOpenAI(
             model=model_name,
             temperature=0.1,  # Very low temperature for compliance
             max_tokens=3000
         )
+        
+        # Hybrid approach: bind validation tools for LLM-driven decisions
+        if enable_tool_selection:
+            self.llm = self.base_llm.bind_tools(LANGGRAPH_VALIDATION_TOOLS)
+        else:
+            self.llm = self.base_llm
     
     async def execute(self, draft: Draft) -> Dict[str, Any]:
         """

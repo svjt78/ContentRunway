@@ -2,7 +2,6 @@
 
 from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
 from langchain.schema import HumanMessage, SystemMessage
 import logging
 import json
@@ -86,9 +85,9 @@ class CritiqueAgent:
     provides targeted feedback, and manages retry cycles with learning data collection.
     """
     
-    def __init__(self, model_name: str = "claude-3-sonnet-20241022"):
-        # Use Claude for comprehensive critique and analysis
-        self.llm = ChatAnthropic(
+    def __init__(self, model_name: str = "gpt-4"):
+        # Use OpenAI GPT-4 for comprehensive critique and analysis
+        self.llm = ChatOpenAI(
             model=model_name,
             temperature=0.2,  # Low temperature for consistent critique
             max_tokens=4000

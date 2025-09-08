@@ -9,6 +9,12 @@ import json
 from datetime import datetime
 
 from ..state.pipeline_state import Outline, Draft, Source, Citation, ContentPipelineState
+from ..tools.langgraph_tools import (
+    LANGGRAPH_WRITING_TOOLS,
+    select_writing_style,
+    analyze_content_quality,
+    optimize_seo
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +83,18 @@ writer_agent_instruction = f"""
 class ContentWriterAgent:
     """Generates comprehensive content drafts based on outlines and sources."""
     
-    def __init__(self, model_name: str = "gpt-4"):
-        self.llm = ChatOpenAI(
+    def __init__(self, model_name: str = "gpt-4", enable_tool_selection: bool = True):
+        self.base_llm = ChatOpenAI(
             model=model_name,
             temperature=0.4,  # Balanced creativity for engaging writing
             max_tokens=4000
         )
+        
+        # Hybrid approach: bind tools for LLM-driven decisions
+        if enable_tool_selection:
+            self.llm = self.base_llm.bind_tools(LANGGRAPH_WRITING_TOOLS)
+        else:
+            self.llm = self.base_llm
     
     async def execute(
         self,
@@ -104,16 +116,20 @@ class ContentWriterAgent:
         logger.info(f"Starting content writing for {outline.estimated_word_count} word article")
         
         try:
-            # Step 1: Prepare writing context
-            writing_context = self._prepare_writing_context(outline, sources, state)
+            # Step 1: Let LLM select writing style
+            style_decision = await self._select_writing_style(outline, state)
             
-            # Step 2: Generate the main content
+            # Step 2: Prepare writing context
+            writing_context = self._prepare_writing_context(outline, sources, state)
+            writing_context['style_config'] = style_decision
+            
+            # Step 3: Generate the main content
             content_sections = await self._generate_content_sections(outline, writing_context)
             
-            # Step 3: Create title and metadata
+            # Step 4: Create title and metadata
             title_metadata = await self._generate_title_and_metadata(outline, content_sections)
             
-            # Step 4: Assemble the final draft
+            # Step 5: Assemble the final draft
             draft = self._assemble_draft(
                 title_metadata, 
                 content_sections, 
@@ -121,7 +137,12 @@ class ContentWriterAgent:
                 writing_context['citations']
             )
             
-            # Step 5: Calculate reading time and metrics
+            # Step 6: Let LLM analyze and optimize content
+            optimization_results = await self._optimize_content(draft, outline)
+            if optimization_results.get('status') == 'success':
+                draft = self._apply_optimizations(draft, optimization_results['data'])
+            
+            # Step 7: Calculate reading time and metrics
             draft = self._calculate_metrics(draft)
             
             logger.info(f"Content draft completed: {draft.word_count} words, {draft.reading_time_minutes}min read")
@@ -132,7 +153,9 @@ class ContentWriterAgent:
                     'sections_generated': len(content_sections),
                     'citations_used': len(draft.citations),
                     'target_keywords_covered': self._count_keyword_coverage(draft, outline),
-                    'content_quality_indicators': self._assess_content_quality(draft, outline)
+                    'content_quality_indicators': self._assess_content_quality(draft, outline),
+                    'style_decisions': style_decision,
+                    'optimization_applied': optimization_results.get('status') == 'success'
                 }
             }
             
@@ -497,3 +520,125 @@ class ContentWriterAgent:
             'word_count_vs_target': draft.word_count / outline.estimated_word_count if outline.estimated_word_count else 1.0,
             'primary_keyword_density': draft.content.lower().count(outline.primary_keyword.lower()) / draft.word_count * 100
         }
+    
+    async def _select_writing_style(
+        self, 
+        outline: Outline, 
+        state: ContentPipelineState
+    ) -> Dict[str, Any]:
+        """Let LLM select appropriate writing style based on context."""
+        
+        system_prompt = writer_agent_instruction
+        
+        domain_focus = state.get('domain_focus', ['general'])
+        content_type = "technical_guide" if any(d in ["ai", "agentic_ai"] for d in domain_focus) else "article"
+        
+        human_prompt = f"""Based on this content outline, select the most appropriate writing style:
+        
+        Topic: {outline.primary_keyword}
+        Target Audience: {outline.target_audience}
+        Domain: {', '.join(domain_focus)}
+        Estimated Length: {outline.estimated_word_count} words
+        Primary Angle: {outline.primary_angle}
+        
+        Choose the writing style by calling the select_writing_style tool with appropriate parameters.
+        """
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=human_prompt)
+        ]
+        
+        try:
+            response = await self.llm.ainvoke(messages)
+            
+            # Check if LLM used tool
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                # Tool was called, extract result
+                tool_call = response.tool_calls[0]
+                if tool_call['name'] == 'select_writing_style':
+                    return tool_call['result']
+            
+            # Fallback if no tool was used
+            return select_writing_style(
+                content_type=content_type,
+                audience=outline.target_audience,
+                tone="professional"
+            )
+            
+        except Exception as e:
+            logger.error(f"Writing style selection failed: {e}")
+            # Default fallback
+            return {
+                "status": "success",
+                "data": {
+                    "style_config": {
+                        "paragraph_length": "medium",
+                        "technical_depth": "medium",
+                        "examples": "case_studies",
+                        "structure": "problem_solution"
+                    }
+                }
+            }
+    
+    async def _optimize_content(
+        self, 
+        draft: Draft, 
+        outline: Outline
+    ) -> Dict[str, Any]:
+        """Let LLM analyze and optimize content quality."""
+        
+        system_prompt = writer_agent_instruction
+        
+        human_prompt = f"""Analyze this content and optimize it if needed:
+        
+        Title: {draft.title}
+        Word Count: {draft.word_count}
+        Primary Keyword: {outline.primary_keyword}
+        Secondary Keywords: {', '.join(outline.secondary_keywords[:3])}
+        
+        Content preview: {draft.content[:500]}...
+        
+        Use the appropriate analysis tools to check content quality and SEO optimization.
+        """
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=human_prompt)
+        ]
+        
+        try:
+            response = await self.llm.ainvoke(messages)
+            
+            # Check if LLM used optimization tools
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                # Return the tool results
+                return response.tool_calls[0].get('result', {'status': 'success', 'data': {}})
+            
+            # No tools used, return success
+            return {'status': 'success', 'data': {}}
+            
+        except Exception as e:
+            logger.error(f"Content optimization failed: {e}")
+            return {'status': 'error', 'error': str(e)}
+    
+    def _apply_optimizations(
+        self, 
+        draft: Draft, 
+        optimization_data: Dict[str, Any]
+    ) -> Draft:
+        """Apply optimization recommendations to the draft."""
+        
+        # Apply any optimization suggestions
+        if 'recommendations' in optimization_data:
+            recommendations = optimization_data['recommendations']
+            
+            # Apply title optimization if suggested
+            if 'title_suggestions' in recommendations and recommendations['title_suggestions']:
+                draft.title = recommendations['title_suggestions'][0]
+            
+            # Apply meta description optimization
+            if 'meta_description' in recommendations:
+                draft.meta_description = recommendations['meta_description']
+        
+        return draft

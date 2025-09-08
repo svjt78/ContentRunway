@@ -8,6 +8,7 @@ import json
 from collections import Counter
 
 from ..state.pipeline_state import TopicIdea, Source, Outline, ContentPipelineState
+from ..tools.langgraph_tools import LANGGRAPH_SEO_TOOLS, optimize_seo, analyze_content_quality
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +73,18 @@ seo_agent_instruction = f"""
 class SEOStrategistAgent:
     """Develops SEO strategy and creates detailed content outline."""
     
-    def __init__(self, model_name: str = "gpt-4"):
-        self.llm = ChatOpenAI(
+    def __init__(self, model_name: str = "gpt-4", enable_tool_selection: bool = True):
+        self.base_llm = ChatOpenAI(
             model=model_name,
             temperature=0.3,  # Balanced for strategic planning
             max_tokens=3000
         )
+        
+        # Hybrid approach: bind SEO tools for LLM-driven optimization
+        if enable_tool_selection:
+            self.llm = self.base_llm.bind_tools(LANGGRAPH_SEO_TOOLS)
+        else:
+            self.llm = self.base_llm
     
     async def execute(
         self,

@@ -19,9 +19,9 @@ from .agents import (
     ContentEditorAgent,
     CritiqueAgent,
     ContentFormatterAgent,
-    HumanReviewGateAgent,
-    PublishingAgent
+    HumanReviewGateAgent
 )
+from .agents.publisher import PublisherAgent
 
 
 class ContentPipeline:
@@ -45,7 +45,7 @@ class ContentPipeline:
         self.critique_agent = CritiqueAgent()
         self.content_formatter = ContentFormatterAgent()
         self.human_review_gate = HumanReviewGateAgent()
-        self.publishing_agent = PublishingAgent()
+        self.publishing_agent = PublisherAgent()
     
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph StateGraph for the pipeline."""
@@ -517,30 +517,46 @@ class ContentPipeline:
             return "rejected"
     
     async def _publishing_step(self, state: ContentPipelineState) -> ContentPipelineState:
-        """Execute publishing to multiple platforms."""
-        print("🚀 Starting publishing")
+        """Execute DigitalDossier publishing with enhanced agents."""
+        print("🚀 Starting DigitalDossier publishing")
         
         state["current_step"] = "publishing"
         
         try:
-            # Use publishing agent to distribute content
+            # Use new Publisher Agent for DigitalDossier integration
             publishing_results = await self.publishing_agent.execute(
                 channel_drafts=state["channel_drafts"],
                 state=state
             )
             
-            # Update state with publishing results
+            # Update state with publishing results and state updates
+            if publishing_results.get("state_updates"):
+                state.update(publishing_results["state_updates"])
+            
             state["publishing_results"] = publishing_results["results"]
-            state["published_urls"] = publishing_results["urls"]
-            state["progress_percentage"] = 95.0
+            state["published_urls"] = publishing_results["published_urls"]
             
-            state["step_history"].append("publishing_completed")
+            # Only update progress if not already set by the agent
+            if "progress_percentage" not in publishing_results.get("state_updates", {}):
+                state["progress_percentage"] = 95.0
             
-            print(f"✅ Publishing completed: {len(state['published_urls'])} URLs")
+            # Only add step history if not already added by the agent
+            if "step_history" not in publishing_results.get("state_updates", {}):
+                state["step_history"].append("publishing_completed")
+            
+            if publishing_results["successful_platforms"]:
+                print(f"✅ DigitalDossier publishing completed: {len(state['published_urls'])} URLs")
+                print(f"📄 Document URLs: {state['published_urls']}")
+            else:
+                print("❌ DigitalDossier publishing failed")
+                for failed in publishing_results["failed_platforms"]:
+                    print(f"   - {failed['platform']}: {failed['error']}")
             
         except Exception as e:
-            state["error_message"] = f"Publishing failed: {str(e)}"
+            error_msg = f"DigitalDossier publishing failed: {str(e)}"
+            state["error_message"] = error_msg
             state["status"] = "failed"
+            print(f"❌ {error_msg}")
             
         return state
     
