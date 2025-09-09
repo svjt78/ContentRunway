@@ -8,7 +8,16 @@ from datetime import datetime
 import logging
 
 from app.models.pipeline import PipelineRun, TopicIdea, ResearchSource, ContentDraft
+from app.schemas.pipeline import PipelineRunCreate
 from app.core.config import settings
+
+# Import TYPE_CHECKING to avoid circular imports during type checking
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.schemas.pipeline import PipelineRunCreate
+
+# Import redis service for state management
+from app.services.redis_service import redis_service
 
 logger = logging.getLogger(__name__)
 
@@ -19,25 +28,18 @@ class PipelineService:
     def __init__(self, db: AsyncSession):
         self.db = db
     
-    async def start_pipeline(self, pipeline_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def start_pipeline(self, pipeline_data: PipelineRunCreate) -> Dict[str, Any]:
         """Start a new content pipeline run."""
         try:
             # Create new pipeline run
             pipeline_run = PipelineRun(
-                tenant_id=pipeline_data.get('tenant_id', 'personal'),
-                domain_focus=pipeline_data['domain_focus'],
-                quality_thresholds=pipeline_data.get('quality_thresholds', {
-                    'overall': settings.QUALITY_THRESHOLD_OVERALL,
-                    'technical': settings.QUALITY_THRESHOLD_TECHNICAL,
-                    'domain_expertise': settings.QUALITY_THRESHOLD_DOMAIN,
-                    'style_consistency': settings.QUALITY_THRESHOLD_STYLE,
-                    'compliance': settings.QUALITY_THRESHOLD_COMPLIANCE
-                }),
+                tenant_id=pipeline_data.tenant_id,
+                domain_focus=pipeline_data.domain_focus,
+                quality_thresholds=pipeline_data.quality_thresholds,
                 status='initialized',
                 current_step='initialized',
                 progress_percentage=0.0,
-                retry_count=0,
-                max_retries=3
+                retry_count=0
             )
             
             self.db.add(pipeline_run)
@@ -45,12 +47,11 @@ class PipelineService:
             await self.db.refresh(pipeline_run)
             
             # Store initial state in Redis for pipeline execution
-            from app.services.redis_service import redis_service
             initial_state = {
                 "run_id": str(pipeline_run.id),
                 "tenant_id": pipeline_run.tenant_id,
                 "status": pipeline_run.status,
-                "domain_focus": pipeline_data['domain_focus'],
+                "domain_focus": pipeline_data.domain_focus,
                 "quality_thresholds": pipeline_run.quality_thresholds,
                 "current_step": "initialized",
                 "progress_percentage": 0.0,
@@ -58,9 +59,8 @@ class PipelineService:
             }
             await redis_service.store_pipeline_state(str(pipeline_run.id), initial_state)
             
-            # TODO: Trigger LangGraph pipeline execution
-            # This would integrate with Celery to run the pipeline asynchronously
-            # await self._trigger_pipeline_execution(pipeline_run.id, pipeline_data)
+            # Trigger LangGraph pipeline execution using Celery
+            await self._trigger_pipeline_execution(pipeline_run.id, pipeline_data)
             
             return {
                 'id': str(pipeline_run.id),
@@ -68,14 +68,48 @@ class PipelineService:
                 'status': pipeline_run.status,
                 'domain_focus': pipeline_run.domain_focus,
                 'quality_thresholds': pipeline_run.quality_thresholds,
-                'created_at': pipeline_run.created_at.isoformat(),
+                'created_at': pipeline_run.created_at,
+                'started_at': None,
+                'completed_at': None,
                 'current_step': pipeline_run.current_step,
-                'progress_percentage': pipeline_run.progress_percentage
+                'progress_percentage': pipeline_run.progress_percentage,
+                'chosen_topic_id': None,
+                'final_quality_score': None,
+                'human_approved': False,
+                'published_urls': [],
+                'error_message': None,
+                'retry_count': 0
             }
             
         except Exception as e:
             await self.db.rollback()
             logger.error(f"Failed to start pipeline: {e}")
+            raise
+    
+    async def _trigger_pipeline_execution(self, pipeline_id: uuid.UUID, pipeline_data: 'PipelineRunCreate'):
+        """Trigger pipeline execution using Celery background task."""
+        try:
+            # Import here to avoid circular imports
+            from app.tasks.pipeline_tasks import execute_content_pipeline
+            
+            # Prepare pipeline configuration
+            pipeline_config = {
+                "tenant_id": pipeline_data.tenant_id,
+                "domain_focus": pipeline_data.domain_focus,
+                "quality_thresholds": pipeline_data.quality_thresholds,
+                "research_query": getattr(pipeline_data, 'research_query', None)
+            }
+            
+            # Launch background task
+            task = execute_content_pipeline.apply_async(
+                args=[str(pipeline_id), pipeline_config],
+                task_id=f"pipeline_{pipeline_id}"
+            )
+            
+            logger.info(f"Launched pipeline execution task {task.id} for run {pipeline_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to trigger pipeline execution: {e}")
             raise
     
     async def get_pipeline_run(self, run_id: uuid.UUID) -> Optional[Dict[str, Any]]:
@@ -134,14 +168,21 @@ class PipelineService:
             return [
                 {
                     'id': str(run.id),
+                    'tenant_id': run.tenant_id,
                     'status': run.status,
                     'domain_focus': run.domain_focus,
+                    'quality_thresholds': run.quality_thresholds,
                     'created_at': run.created_at.isoformat(),
+                    'started_at': run.started_at.isoformat() if run.started_at else None,
+                    'completed_at': run.completed_at.isoformat() if run.completed_at else None,
                     'current_step': run.current_step,
                     'progress_percentage': run.progress_percentage,
+                    'chosen_topic_id': str(run.chosen_topic_id) if run.chosen_topic_id else None,
                     'final_quality_score': run.final_quality_score,
                     'human_approved': run.human_approved,
-                    'error_message': run.error_message
+                    'published_urls': run.published_urls or [],
+                    'error_message': run.error_message,
+                    'retry_count': run.retry_count
                 }
                 for run in pipeline_runs
             ]
@@ -187,7 +228,11 @@ class PipelineService:
             pipeline_run.status = 'paused'
             await self.db.commit()
             
-            # TODO: Signal LangGraph pipeline to pause
+            # Update Redis to signal pause (would be picked up by running pipeline)
+            await redis_service.store_pipeline_checkpoint(str(run_id), {
+                "action": "pause",
+                "timestamp": datetime.now().isoformat()
+            })
             
             return True
             
@@ -209,7 +254,14 @@ class PipelineService:
             pipeline_run.status = 'running'
             await self.db.commit()
             
-            # TODO: Signal LangGraph pipeline to resume
+            # Trigger pipeline resumption using Celery
+            from app.tasks.pipeline_tasks import execute_content_pipeline
+            pipeline_config = {
+                "tenant_id": pipeline_run.tenant_id,
+                "domain_focus": pipeline_run.domain_focus,
+                "quality_thresholds": pipeline_run.quality_thresholds
+            }
+            execute_content_pipeline.apply_async(args=[str(run_id), pipeline_config])
             
             return True
             
@@ -232,7 +284,11 @@ class PipelineService:
             pipeline_run.completed_at = datetime.now()
             await self.db.commit()
             
-            # TODO: Signal LangGraph pipeline to cancel
+            # Signal cancellation via Redis (pipeline will check and stop)
+            await redis_service.store_pipeline_checkpoint(str(run_id), {
+                "action": "cancel",
+                "timestamp": datetime.now().isoformat()
+            })
             
             return True
             
@@ -308,7 +364,15 @@ class PipelineService:
             
             await self.db.commit()
             
-            # TODO: Trigger next phase of pipeline
+            # Trigger content creation phase using Celery  
+            from app.tasks.pipeline_tasks import execute_content_pipeline
+            pipeline_config = {
+                "tenant_id": "personal",  # Phase 1 single tenant
+                "domain_focus": topic.domain,
+                "quality_thresholds": {"overall": 0.85},  # Default thresholds
+                "chosen_topic_id": str(topic_id)
+            }
+            execute_content_pipeline.apply_async(args=[str(run_id), pipeline_config])
             
             return True
             

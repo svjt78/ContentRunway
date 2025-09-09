@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Install langgraph directory as editable package
-RUN if [ -d "langgraph" ]; then pip install -e langgraph/; fi
+# RUN if [ -d "langgraph" ]; then pip install -e langgraph/; fi
 
 EXPOSE 8000
 

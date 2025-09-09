@@ -39,7 +39,7 @@ export function StartPipelineForm({ onClose, onStart }: StartPipelineFormProps) 
         overall: 0.85,
         technical: 0.90,
         domain_expertise: 0.90,
-        style_consistency: 0.88,
+        style_consistency: 0.85,
         compliance: 0.95
       }
     }

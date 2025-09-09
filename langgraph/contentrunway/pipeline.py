@@ -4,7 +4,8 @@ ContentRunway LangGraph Pipeline - Main orchestration workflow.
 
 from typing import Dict, List, Any
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver
+# Temporarily disable SqliteSaver due to version issues
+# from langgraph.checkpoint.sqlite import SqliteSaver
 
 from .state import ContentPipelineState
 from .agents import (
@@ -29,7 +30,8 @@ class ContentPipeline:
     
     def __init__(self, checkpointer_path: str = "pipeline_checkpoints.db"):
         """Initialize the content pipeline."""
-        self.checkpointer = SqliteSaver.from_conn_string(checkpointer_path)
+        # Temporarily disable checkpointer due to version issues
+        self.checkpointer = None # SqliteSaver.from_conn_string(checkpointer_path)
         self.graph = self._build_graph()
         
         # Initialize agents
@@ -116,6 +118,7 @@ class ContentPipeline:
         workflow.add_edge("publishing", "completion")
         workflow.add_edge("completion", END)
         
+        # Compile without checkpointer for now
         return workflow.compile(checkpointer=self.checkpointer)
     
     async def _research_step(self, state: ContentPipelineState) -> ContentPipelineState:
