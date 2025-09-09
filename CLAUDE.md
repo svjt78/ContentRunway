@@ -338,3 +338,8 @@ graph TD
 - Multi-agent parallel processing for efficiency
 - Automated DigitalDossier publishing with AI-powered enhancements
 - Make sure to use uv to manage all dependencies
+
+# Git Commit Preferences
+- DO NOT include any Claude or AI attribution in commit messages
+- DO NOT add "Generated with Claude Code" or "Co-Authored-By: Claude" lines
+- Use clean, professional commit messages without AI references
