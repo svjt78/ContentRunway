@@ -74,3 +74,6 @@ dump.rdb
 *.cert
 secrets/
 credentials/
+
+# Project instructions (local only)
+CLAUDE.md
