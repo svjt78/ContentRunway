@@ -77,3 +77,6 @@ credentials/
 
 # Project instructions (local only)
 CLAUDE.md
+
+# Claude Code configuration
+.claude/
