@@ -1,0 +1,13 @@
+# Commit message template
+# 
+# Keep the first line under 50 characters
+# Use the body to explain what and why (not how)
+#
+# Type: [feat|fix|docs|style|refactor|test|chore]
+# 
+# Example:
+# feat: add user authentication system
+# 
+# - Implement JWT token-based authentication
+# - Add user login and registration endpoints
+# - Include password hashing and validation
