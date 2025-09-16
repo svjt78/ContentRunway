@@ -7,9 +7,9 @@ from datetime import datetime
 from .category_classifier_agent import CategoryClassifierAgent
 from .title_generator_agent import TitleGeneratorAgent
 from .cover_image_agent import CoverImageAgent
+from ..tools.genre_mapping_tool import GenreMappingTool
 from ..tools.digitaldossier_api_tool import DigitalDossierAPITool
 from ..tools.pdf_generator_tool import PDFGeneratorTool
-from ..tools.genre_mapping_tool import GenreMappingTool
 from ..utils.publisher_logger import PublisherLogger
 
 
@@ -22,7 +22,7 @@ class PublisherAgent:
     2. Title generation and optimization
     3. Cover image selection and processing
     4. PDF generation
-    5. Genre mapping
+    5. Genre generation using LLM
     6. DigitalDossier API upload
     7. Pipeline state updates
     """
@@ -35,10 +35,26 @@ class PublisherAgent:
         self.title_generator = TitleGeneratorAgent()
         self.cover_image_agent = CoverImageAgent()
         
-        # Initialize tools
-        self.api_tool = DigitalDossierAPITool()
-        self.pdf_generator = PDFGeneratorTool()
-        self.genre_mapper = GenreMappingTool(self.api_tool)
+        # Initialize tools (graceful fallback if environment not configured)
+        try:
+            self.api_tool = DigitalDossierAPITool()
+            self.genre_mapping_tool = GenreMappingTool(self.api_tool)
+            self.publishing_enabled = True
+        except ValueError as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"DigitalDossier publishing disabled: {e}")
+            self.api_tool = None
+            self.genre_mapping_tool = None
+            self.publishing_enabled = False
+        
+        try:
+            self.pdf_generator = PDFGeneratorTool()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"PDF generation disabled: {e}")
+            self.pdf_generator = None
     
     async def execute(
         self,
@@ -69,15 +85,27 @@ class PublisherAgent:
         
         try:
             # Step 1: Extract content from state
+            print("🔍 Step 1: Extracting content from state...")
             content = await self._extract_content_from_state(channel_drafts, state)
+            print(f"   ✅ Content extracted: {list(content.keys())}")
             
             # Step 2: Test API connection
+            print("🔍 Step 2: Testing API connection...")
             await self._verify_api_connection()
+            print("   ✅ API connection verified")
             
             # Step 3: Execute sub-agents in parallel where possible
-            classification_result, title_result = await self._execute_content_analysis(content, state)
+            print("🔍 Step 3: Executing content analysis...")
+            try:
+                classification_result, title_result = await self._execute_content_analysis(content, state)
+                print(f"   ✅ Classification: {classification_result.get('classification')}")
+                print(f"   ✅ Title: {title_result.get('recommended_title')}")
+            except Exception as e:
+                print(f"   ❌ Content analysis failed: {e}")
+                raise
             
             # Step 4: Generate cover image (depends on classification)
+            print("🔍 Step 4: Generating cover image...")
             image_result = await self.cover_image_agent.execute(
                 content,
                 classification_result['classification'],
@@ -85,33 +113,50 @@ class PublisherAgent:
                 title_result['recommended_title'],
                 state
             )
+            print(f"   ✅ Cover image: {image_result.get('filename')}")
             
             # Step 5: Generate PDF
+            print("🔍 Step 5: Generating PDF...")
             pdf_result = await self._generate_pdf(content, title_result['recommended_title'])
+            print(f"   ✅ PDF: {pdf_result.get('filename')}")
             
-            # Step 6: Map to genre
-            genre_id, genre_analysis = await self.genre_mapper.map_content_to_genre(
-                title_result['recommended_title'],
-                classification_result['classification'],
-                classification_result['analysis'],
-                content.get('summary', '')
+            # Step 6: Map content to genre using enhanced LLM mapping
+            print("🔍 Step 6: Mapping content to genre...")
+            genre_id, genre_analysis = await self.genre_mapping_tool.map_content_to_genre(
+                title=title_result['recommended_title'],
+                classification=classification_result['classification'],
+                classification_analysis=classification_result['analysis'],
+                content_summary=content.get('summary', '')
             )
+            print(f"   ✅ Genre: {genre_analysis.get('selected_genre_name')} (ID: {genre_id})")
             
-            # Step 7: Upload to DigitalDossier
+            # Convert to expected format for backward compatibility
+            genre_result = {
+                'genre_id': genre_id,
+                **genre_analysis  # Include all analysis data
+            }
+            
+            # Step 7: Upload to DigitalDossier with genre metadata
+            print("🔍 Step 7: Uploading to DigitalDossier...")
+            print(f"   📝 Title: {title_result['recommended_title']}")
+            print(f"   🏷️ Genre: {genre_result.get('selected_genre_name')} (ID: {genre_result['genre_id']})")
+            print(f"   🆕 New Genre Required: {genre_result.get('requires_new_genre', False)}")
+            
             upload_result = await self._upload_to_digitaldossier(
                 title=title_result['recommended_title'],
                 category=classification_result['classification'],
-                genre_id=genre_id,
+                genre_id=genre_result['genre_id'],
+                genre_metadata=genre_result if genre_result.get('requires_new_genre') else None,
                 cover_image=image_result['api_object'],
                 pdf_file=self.api_tool.create_pdf_file_object(
                     pdf_result['pdf_data'],
                     pdf_result['filename']
-                ),
-                summary=content.get('summary', ''),
-                content_text=content.get('content', '')
+                )
             )
+            print(f"   ✅ Upload result: {upload_result.get('success', False)}")
             
             # Step 8: Update pipeline state
+            print("🔍 Step 8: Updating pipeline state...")
             updated_state = await self._update_pipeline_state(
                 state,
                 {
@@ -119,12 +164,14 @@ class PublisherAgent:
                     'title_result': title_result,
                     'image_result': image_result,
                     'pdf_result': pdf_result,
-                    'genre_analysis': genre_analysis,
+                    'genre_result': genre_result,
                     'upload_result': upload_result
                 }
             )
+            print("   ✅ Pipeline state updated")
             
             # Step 9: Create comprehensive results
+            print("🔍 Step 9: Creating final results...")
             final_results = self._create_publishing_results(
                 upload_result,
                 {
@@ -132,7 +179,7 @@ class PublisherAgent:
                     'title': title_result,
                     'image': image_result,
                     'pdf': pdf_result,
-                    'genre': genre_analysis,
+                    'genre': genre_result,
                     'processing_time': (datetime.now() - start_time).total_seconds()
                 }
             )
@@ -149,14 +196,18 @@ class PublisherAgent:
                 operation_context
             )
             
-            return {
+            print("🔍 Step 10: Creating return result...")
+            result = {
                 'results': final_results,
                 'state_updates': updated_state,
-                'successful_platforms': ['digitaldossier'],
-                'failed_platforms': [],
+                'successful_platforms': ['digitaldossier'] if upload_result.get('success') else [],
+                'failed_platforms': [] if upload_result.get('success') else ['digitaldossier'],
                 'published_urls': [upload_result.get('document_url')] if upload_result.get('document_url') else [],
                 'publishing_summary': final_results
             }
+            print(f"   ✅ Successful platforms: {result['successful_platforms']}")
+            print(f"   ❌ Failed platforms: {result['failed_platforms']}")
+            return result
             
         except Exception as e:
             error_msg = f"DigitalDossier publishing failed: {e}"
@@ -261,22 +312,15 @@ class PublisherAgent:
         
         self.logger.log_info("content_analysis", "Starting content classification and title generation")
         
-        # Execute classification and title generation in parallel
-        classification_task = self.category_classifier.execute(content, state)
+        # Execute classification first, then title generation
+        classification_result = await self.category_classifier.execute(content, state)
         
-        # Create a delayed title generation that waits for classification
-        async def title_generation_with_classification():
-            classification_result = await classification_task
-            return await self.title_generator.execute(
-                content,
-                classification_result['classification'],
-                classification_result['analysis'],
-                state
-            )
-        
-        classification_result, title_result = await asyncio.gather(
-            classification_task,
-            title_generation_with_classification()
+        # Execute title generation using classification results
+        title_result = await self.title_generator.execute(
+            content,
+            classification_result['classification'],
+            classification_result['analysis'],
+            state
         )
         
         self.logger.log_info(
@@ -329,8 +373,7 @@ class PublisherAgent:
         genre_id: int,
         cover_image: Dict[str, str],
         pdf_file: Dict[str, str],
-        summary: Optional[str] = None,
-        content_text: Optional[str] = None
+        genre_metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Upload document to DigitalDossier API."""
         
@@ -351,8 +394,8 @@ class PublisherAgent:
                 genre_id=genre_id,
                 cover_image=cover_image,
                 pdf_file=pdf_file,
-                summary=summary,
-                content=content_text
+                genre_metadata=genre_metadata
+                # Note: Excluding summary and content for PDF-only uploads to prevent duplicate text display
             )
             
             # Add success indicator and extract URL if available
@@ -401,7 +444,8 @@ class PublisherAgent:
                     'document_id': results['upload_result'].get('document_id'),
                     'classification': results['classification_result']['classification'],
                     'final_title': results['title_result']['recommended_title'],
-                    'genre_id': results['genre_analysis']['selected_genre_id'],
+                    'genre_id': results['genre_result']['genre_id'],
+                    'genre_name': results['genre_result']['selected_genre'],
                     'processing_details': {
                         'classification_confidence': results['classification_result']['confidence_score'],
                         'title_score': results['title_result']['recommended_score'],
@@ -443,8 +487,8 @@ class PublisherAgent:
                 'title_optimization_score': processing_details['title']['recommended_score'],
                 'cover_image_placeholder': processing_details['image']['is_placeholder'],
                 'pdf_size_bytes': processing_details['pdf']['size_bytes'],
-                'genre_id': processing_details['genre']['selected_genre_id'],
-                'genre_name': processing_details['genre']['selected_genre_name']
+                'genre_id': processing_details['genre']['genre_id'],
+                'genre_name': processing_details['genre']['selected_genre']
             },
             'processing_metrics': {
                 'total_processing_time_seconds': processing_details['processing_time'],
@@ -452,7 +496,7 @@ class PublisherAgent:
                 'api_tokens_used': (
                     processing_details['classification']['analysis'].get('tokens_used', 0) +
                     processing_details['title'].get('generation_details', {}).get('tokens_used', 0) +
-                    processing_details['genre'].get('tokens_used', 0)
+                    processing_details['genre'].get('generation_details', {}).get('tokens_used', 0)
                 )
             },
             'timestamp': datetime.now().isoformat(),

@@ -38,6 +38,16 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DIGITALDOSSIER_BASE_URL=http://localhost:3003
+      - DIGITALDOSSIER_API_TOKEN=${DIGITALDOSSIER_API_TOKEN}
+      - DIGITALDOSSIER_ADMIN_EMAIL=${DIGITALDOSSIER_ADMIN_EMAIL}
+      - DIGITALDOSSIER_ADMIN_PASSWORD=${DIGITALDOSSIER_ADMIN_PASSWORD}
+      # OpenCV headless configuration
+      - DISPLAY=
+      - QT_QPA_PLATFORM=offscreen
+      - OPENCV_IO_ENABLE_OPENEXR=0
+      - OPENCV_IO_ENABLE_JASPER=0
+      - OPENCV_VIDEOIO_PRIORITY_MSMF=0
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,6 +75,16 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DIGITALDOSSIER_BASE_URL=http://localhost:3003
+      - DIGITALDOSSIER_API_TOKEN=${DIGITALDOSSIER_API_TOKEN}
+      - DIGITALDOSSIER_ADMIN_EMAIL=${DIGITALDOSSIER_ADMIN_EMAIL}
+      - DIGITALDOSSIER_ADMIN_PASSWORD=${DIGITALDOSSIER_ADMIN_PASSWORD}
+      # OpenCV headless configuration
+      - DISPLAY=
+      - QT_QPA_PLATFORM=offscreen
+      - OPENCV_IO_ENABLE_OPENEXR=0
+      - OPENCV_IO_ENABLE_JASPER=0
+      - OPENCV_VIDEOIO_PRIORITY_MSMF=0
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,6 +126,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    networks:
+      - app-network
+
+  # Redis Commander - Redis Web UI
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    ports:
+      - "8082:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - app-network
 
@@ -166,6 +199,19 @@ services:
     depends_on:
       - "etcd"
       - "minio"
+    networks:
+      - app-network
+
+  # Attu - Milvus Web UI
+  attu:
+    image: zilliz/attu:v2.3.8
+    ports:
+      - "3001:3000"
+    environment:
+      - MILVUS_URL=http://milvus-standalone:19530
+    depends_on:
+      milvus-standalone:
+        condition: service_healthy
     networks:
       - app-network
 

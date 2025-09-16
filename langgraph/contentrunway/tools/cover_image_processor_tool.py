@@ -4,13 +4,12 @@ import os
 import base64
 import random
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
-import cv2
-import numpy as np
-from PIL import Image, ImageFilter
+from typing import Dict, Any, List, Optional, Tuple, Union
+from PIL import Image
 import io
 
 from ..utils.publisher_logger import PublisherLogger
+from .dalle_image_generator_tool import DalleImageGeneratorTool
 
 
 class CoverImageProcessorTool:
@@ -18,17 +17,10 @@ class CoverImageProcessorTool:
     
     def __init__(self):
         self.logger = PublisherLogger()
-        self.base_cover_dir = Path("docs/cover-image")
+        self.dalle_generator = DalleImageGeneratorTool()
         
-        # Supported image formats
+        # Supported image formats (kept for backward compatibility)
         self.supported_formats = {'.png', '.jpg', '.jpeg', '.bmp', '.tiff'}
-        
-        # Text removal settings
-        self.text_detection_config = {
-            'text_threshold': 0.7,
-            'link_threshold': 0.4,
-            'low_text': 0.4
-        }
     
     async def select_cover_image(
         self,
@@ -37,7 +29,7 @@ class CoverImageProcessorTool:
         content_title: str
     ) -> Dict[str, Any]:
         """
-        Select appropriate cover image based on category and content analysis.
+        Generate cover image using DALL-E API based on category and content analysis.
         
         Args:
             category: Blog or Product
@@ -45,7 +37,7 @@ class CoverImageProcessorTool:
             content_title: Title of the content
             
         Returns:
-            Dictionary with selected image info
+            Dictionary with generated image info (maintains backward compatibility)
         """
         
         operation_context = {
@@ -57,55 +49,31 @@ class CoverImageProcessorTool:
         self.logger.log_operation_start("select_cover_image", operation_context)
         
         try:
-            # Determine folder based on category
-            category_folder = "blog" if category.lower() == "blog" else "product"
-            image_dir = self.base_cover_dir / category_folder
-            
-            # Check if directory exists
-            if not image_dir.exists():
-                self.logger.log_warning(
-                    "select_cover_image",
-                    f"Directory does not exist: {image_dir}",
-                    operation_context
-                )
-                
-                # Create directory and return placeholder info
-                image_dir.mkdir(parents=True, exist_ok=True)
-                return self._create_placeholder_image_info(category_folder)
-            
-            # Get available images
-            available_images = self._get_available_images(image_dir)
-            
-            if not available_images:
-                self.logger.log_warning(
-                    "select_cover_image",
-                    f"No images found in {image_dir}",
-                    operation_context
-                )
-                return self._create_placeholder_image_info(category_folder)
-            
-            # Select best image based on content analysis
-            selected_image_path = self._select_best_image(
-                available_images,
-                content_analysis,
-                content_title
+            # Generate image using DALL-E
+            domain = content_analysis.get("domain", "general")
+            dalle_result = await self.dalle_generator.generate_cover_image(
+                title=content_title,
+                category=category,
+                domain=domain,
+                content_analysis=content_analysis
             )
             
-            # Create image info
+            # Convert to backward-compatible format
             image_info = {
-                "selected_image_path": str(selected_image_path),
+                "selected_image_path": None,  # No physical path since it's generated
                 "category": category,
-                "category_folder": category_folder,
-                "filename": selected_image_path.name,
-                "available_count": len(available_images),
-                "selection_method": "content_based"
+                "category_folder": "blog" if category.lower() == "blog" else "product",
+                "filename": dalle_result["filename"],
+                "available_count": 1,  # Always 1 for generated images
+                "selection_method": "dalle_generated",
+                "dalle_result": dalle_result  # Store full DALL-E result
             }
             
             self.logger.log_operation_success(
                 "select_cover_image",
                 {
-                    "selected_image": selected_image_path.name,
-                    "available_count": len(available_images)
+                    "generated_image": dalle_result["filename"],
+                    "is_placeholder": dalle_result["is_placeholder"]
                 },
                 operation_context
             )
@@ -113,28 +81,15 @@ class CoverImageProcessorTool:
             return image_info
             
         except Exception as e:
-            error_msg = f"Cover image selection failed: {e}"
+            error_msg = f"DALL-E image generation failed: {e}"
             self.logger.log_operation_failure("select_cover_image", error_msg, operation_context)
             
-            # Return placeholder
-            return self._create_placeholder_image_info("blog")
+            # Return placeholder info for backward compatibility
+            return self._create_placeholder_image_info("blog", error_msg)
     
     def _get_available_images(self, image_dir: Path) -> List[Path]:
-        """Get list of available image files."""
-        
-        images = []
-        
-        try:
-            for file_path in image_dir.iterdir():
-                if (file_path.is_file() and 
-                    file_path.suffix.lower() in self.supported_formats):
-                    images.append(file_path)
-            
-            return sorted(images)  # Sort for consistent selection
-            
-        except Exception as e:
-            self.logger.log_warning("get_available_images", f"Error scanning directory: {e}")
-            return []
+        """Legacy method kept for backward compatibility."""
+        return []  # No longer needed with DALL-E generation
     
     def _select_best_image(
         self,
@@ -142,74 +97,22 @@ class CoverImageProcessorTool:
         content_analysis: Dict[str, Any],
         content_title: str
     ) -> Path:
-        """Select best image based on content analysis."""
-        
-        try:
-            # For now, use keyword-based selection and randomization
-            # In the future, this could be enhanced with image analysis
-            
-            key_indicators = content_analysis.get("key_indicators", [])
-            domain = content_analysis.get("domain", "").lower()
-            
-            # Score images based on filename matching
-            image_scores = []
-            
-            for image_path in available_images:
-                score = 0
-                filename = image_path.stem.lower()
-                
-                # Domain matching
-                if domain and domain in filename:
-                    score += 10
-                
-                # Key indicator matching
-                for indicator in key_indicators:
-                    if indicator.lower() in filename:
-                        score += 5
-                
-                # Title word matching
-                title_words = content_title.lower().split()
-                for word in title_words:
-                    if len(word) > 3 and word in filename:
-                        score += 3
-                
-                image_scores.append((image_path, score))
-            
-            # Sort by score (highest first)
-            image_scores.sort(key=lambda x: x[1], reverse=True)
-            
-            # If top score is 0, select randomly
-            if image_scores[0][1] == 0:
-                selected_image = random.choice(available_images)
-                self.logger.log_info(
-                    "select_best_image",
-                    f"Random selection: {selected_image.name}"
-                )
-            else:
-                # Select highest scoring image
-                selected_image = image_scores[0][0]
-                self.logger.log_info(
-                    "select_best_image",
-                    f"Score-based selection: {selected_image.name} (score: {image_scores[0][1]})"
-                )
-            
-            return selected_image
-            
-        except Exception as e:
-            self.logger.log_warning("select_best_image", f"Error in selection logic: {e}")
-            return available_images[0] if available_images else None
+        """Legacy method kept for backward compatibility."""
+        return None  # No longer needed with DALL-E generation
     
     async def process_cover_image(
         self,
         image_path: str,
-        remove_text: bool = True
+        remove_text: bool = True,
+        replacement_title: str = None
     ) -> Dict[str, Any]:
         """
-        Process cover image (resize, format, remove text).
+        Process cover image - now handles both file paths and pre-generated DALL-E results.
         
         Args:
-            image_path: Path to the image file
-            remove_text: Whether to remove text from image
+            image_path: Path to image file OR special marker for DALL-E generated images
+            remove_text: Ignored for DALL-E images (no text removal needed)
+            replacement_title: Ignored for DALL-E images (title already integrated)
             
         Returns:
             Dictionary with processed image data
@@ -217,151 +120,113 @@ class CoverImageProcessorTool:
         
         operation_context = {
             "image_path": image_path,
-            "remove_text": remove_text
+            "remove_text": remove_text,
+            "replacement_title": replacement_title
         }
         
         self.logger.log_operation_start("process_cover_image", operation_context)
         
+        # For DALL-E generated images, we don't need to process from file
+        # The image data is already processed and ready
+        if image_path and "dalle_generated" in str(image_path):
+            self.logger.log_info("process_cover_image", "DALL-E generated image, no processing needed")
+            # Return a placeholder result - actual processing happens in select_and_process_image
+            return {
+                "dalle_processed": True,
+                "message": "DALL-E image processed in select_and_process_image method"
+            }
+        
         try:
-            image_path = Path(image_path)
-            
-            if not image_path.exists():
-                raise FileNotFoundError(f"Image file not found: {image_path}")
-            
-            # Load image
-            with Image.open(image_path) as img:
-                # Convert to RGB if necessary
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
+            # Legacy file processing (kept for backward compatibility)
+            if image_path:
+                image_path = Path(image_path)
                 
-                original_size = img.size
+                if not image_path.exists():
+                    raise FileNotFoundError(f"Image file not found: {image_path}")
                 
-                # Resize if too large (max 1200x1200 for cover images)
-                max_size = 1200
-                if max(img.size) > max_size:
-                    ratio = max_size / max(img.size)
-                    new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
-                    img = img.resize(new_size, Image.Resampling.LANCZOS)
-                
-                # Remove text if requested
-                if remove_text:
-                    img = await self._remove_text_from_image(img)
-                
-                # Convert to PNG format
-                img_buffer = io.BytesIO()
-                img.save(img_buffer, format='PNG', optimize=True)
-                img_data = img_buffer.getvalue()
-                
-                # Create result
-                result = {
-                    "image_data": img_data,
-                    "image_base64": base64.b64encode(img_data).decode('utf-8'),
-                    "filename": f"{image_path.stem}_processed.png",
-                    "mime_type": "image/png",
-                    "size_bytes": len(img_data),
-                    "dimensions": img.size,
-                    "original_dimensions": original_size,
-                    "text_removed": remove_text,
-                    "processed_at": self._get_timestamp()
-                }
-                
-                self.logger.log_operation_success(
-                    "process_cover_image",
-                    {
+                # Load and process image
+                with Image.open(image_path) as img:
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    
+                    original_size = img.size
+                    
+                    # Resize if too large
+                    max_size = 1200
+                    if max(img.size) > max_size:
+                        ratio = max_size / max(img.size)
+                        new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+                        img = img.resize(new_size, Image.Resampling.LANCZOS)
+                    
+                    # Convert to PNG format
+                    img_buffer = io.BytesIO()
+                    img.save(img_buffer, format='PNG', optimize=True)
+                    img_data = img_buffer.getvalue()
+                    
+                    result = {
+                        "image_data": img_data,
+                        "image_base64": base64.b64encode(img_data).decode('utf-8'),
+                        "filename": f"{image_path.stem}_processed.png",
+                        "mime_type": "image/png",
                         "size_bytes": len(img_data),
-                        "dimensions": f"{img.size[0]}x{img.size[1]}",
-                        "text_removed": remove_text
-                    },
-                    operation_context
-                )
-                
-                return result
+                        "dimensions": img.size,
+                        "original_dimensions": original_size,
+                        "text_removed": False,  # No text removal for legacy images
+                        "processed_at": self._get_timestamp()
+                    }
+                    
+                    self.logger.log_operation_success(
+                        "process_cover_image",
+                        {
+                            "size_bytes": len(img_data),
+                            "dimensions": f"{img.size[0]}x{img.size[1]}"
+                        },
+                        operation_context
+                    )
+                    
+                    return result
+            else:
+                raise ValueError("No image path provided")
                 
         except Exception as e:
             error_msg = f"Image processing failed: {e}"
             self.logger.log_operation_failure("process_cover_image", error_msg, operation_context)
             raise Exception(error_msg)
     
-    async def _remove_text_from_image(self, image: Image.Image) -> Image.Image:
-        """
-        Remove text from image using computer vision techniques.
-        
-        This is a simplified implementation. In production, you might want to use
-        more sophisticated text detection and removal techniques.
-        """
-        
-        try:
-            # Convert PIL image to OpenCV format
-            cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-            
-            # Create a mask for text regions
-            text_mask = self._detect_text_regions(cv_image)
-            
-            if text_mask is not None and np.any(text_mask):
-                # Inpaint text regions
-                inpainted = cv2.inpaint(cv_image, text_mask, 3, cv2.INPAINT_TELEA)
-                
-                # Convert back to PIL
-                result_image = Image.fromarray(cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB))
-                
-                self.logger.log_info("remove_text_from_image", "Text removal completed")
-                return result_image
-            else:
-                self.logger.log_info("remove_text_from_image", "No text detected, returning original")
-                return image
-                
-        except Exception as e:
-            self.logger.log_warning("remove_text_from_image", f"Text removal failed: {e}")
-            return image  # Return original image if text removal fails
+    async def _remove_text_from_image(self, image: Image.Image, replacement_title: str = None) -> Image.Image:
+        """Legacy method kept for backward compatibility - no longer used with DALL-E."""
+        return image  # No text removal needed with DALL-E generated images
     
-    def _detect_text_regions(self, cv_image: np.ndarray) -> Optional[np.ndarray]:
-        """
-        Detect text regions in image.
-        
-        This is a simplified implementation using basic computer vision techniques.
-        For better results, consider using EAST text detector or other deep learning models.
-        """
-        
-        try:
-            # Convert to grayscale
-            gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-            
-            # Apply Gaussian blur
-            blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-            
-            # Apply threshold to get binary image
-            _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            
-            # Find contours that might be text
-            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            # Create mask
-            mask = np.zeros(gray.shape, dtype=np.uint8)
-            
-            # Filter contours that look like text
-            for contour in contours:
-                x, y, w, h = cv2.boundingRect(contour)
-                
-                # Text-like characteristics: reasonable aspect ratio, not too small/large
-                aspect_ratio = w / float(h)
-                area = cv2.contourArea(contour)
-                
-                if (0.1 < aspect_ratio < 10.0 and 
-                    50 < area < 5000 and
-                    10 < w < 500 and 
-                    8 < h < 100):
-                    
-                    # Draw filled rectangle on mask
-                    cv2.rectangle(mask, (x, y), (x + w, y + h), 255, -1)
-            
-            return mask if np.any(mask) else None
-            
-        except Exception as e:
-            self.logger.log_warning("detect_text_regions", f"Text detection failed: {e}")
-            return None
+    def _detect_text_regions(self, cv_image) -> Optional[Any]:
+        """Legacy method kept for backward compatibility."""
+        return None  # No longer needed with DALL-E generation
     
-    def _create_placeholder_image_info(self, category_folder: str) -> Dict[str, Any]:
-        """Create placeholder image info when no images are available."""
+    def _detect_text_regions_with_positions(self, cv_image) -> Tuple[List[Tuple[int, int, int, int]], Optional[Any]]:
+        """Legacy method kept for backward compatibility."""
+        return [], None  # No longer needed with DALL-E generation
+    
+    def _get_system_fonts(self) -> List[str]:
+        """Legacy method kept for backward compatibility."""
+        return []  # No longer needed with DALL-E generation
+    
+    def _get_font(self, font_size: int, font_name: str = None):
+        """Legacy method kept for backward compatibility."""
+        return None  # No longer needed with DALL-E generation
+    
+    def _calculate_optimal_font_size(self, title: str, image_width: int, image_height: int, target_region: Tuple[int, int, int, int] = None) -> int:
+        """Legacy method kept for backward compatibility."""
+        return 36  # Default font size, no longer needed with DALL-E generation
+    
+    def _get_text_color_with_contrast(self, image: Image.Image, text_position: Tuple[int, int]) -> Tuple[int, int, int]:
+        """Legacy method kept for backward compatibility."""
+        return (255, 255, 255)  # Default white, no longer needed with DALL-E generation
+    
+    def _add_title_to_image(self, image: Image.Image, title: str, detected_text_regions: List[Tuple[int, int, int, int]]) -> Image.Image:
+        """Legacy method kept for backward compatibility."""
+        return image  # No text overlay needed with DALL-E generated images
+    
+    def _create_placeholder_image_info(self, category_folder: str, error_msg: str = None) -> Dict[str, Any]:
+        """Create placeholder image info when generation fails."""
         
         return {
             "selected_image_path": None,
@@ -370,7 +235,7 @@ class CoverImageProcessorTool:
             "filename": None,
             "available_count": 0,
             "selection_method": "placeholder",
-            "error": f"No images available in {category_folder} folder"
+            "error": error_msg or f"Image generation failed for {category_folder} category"
         }
     
     def _get_timestamp(self) -> str:
@@ -383,67 +248,73 @@ class CoverImageProcessorTool:
         category: str,
         content_analysis: Dict[str, Any],
         content_title: str,
-        remove_text: bool = True
+        remove_text: bool = True,
+        replacement_title: str = None
     ) -> Dict[str, Any]:
         """
-        Combined method to select and process cover image.
+        Generate cover image using DALL-E API - maintains backward compatible interface.
+        
+        Args:
+            category: Blog or Product category
+            content_analysis: Content analysis from classification
+            content_title: Original content title (used for image generation)
+            remove_text: Ignored for DALL-E images (no text removal needed)
+            replacement_title: Title to use for generation (if None, uses content_title)
         
         Returns:
             Dictionary with processed image data ready for API upload
         """
         
+        # Use replacement title if provided, otherwise use content title
+        final_title = replacement_title or content_title
+        
         operation_context = {
             "category": category,
             "content_title": content_title,
-            "remove_text": remove_text
+            "replacement_title": final_title,
+            "remove_text": remove_text  # Will be ignored but logged for compatibility
         }
         
         self.logger.log_operation_start("select_and_process_image", operation_context)
         
         try:
-            # Select image
-            image_info = await self.select_cover_image(category, content_analysis, content_title)
-            
-            if not image_info.get("selected_image_path"):
-                # Create a simple placeholder image
-                placeholder_result = self._create_placeholder_image()
-                
-                result = {
-                    "image_data": placeholder_result["image_data"],
-                    "image_base64": placeholder_result["image_base64"],
-                    "filename": "placeholder_cover.png",
-                    "mime_type": "image/png",
-                    "size_bytes": len(placeholder_result["image_data"]),
-                    "is_placeholder": True,
-                    "selection_info": image_info
-                }
-                
-                self.logger.log_warning(
-                    "select_and_process_image",
-                    "Using placeholder image",
-                    operation_context
-                )
-                
-                return result
-            
-            # Process selected image
-            processed_image = await self.process_cover_image(
-                image_info["selected_image_path"],
-                remove_text
+            # Generate image using DALL-E with final title
+            domain = content_analysis.get("domain", "general")
+            dalle_result = await self.dalle_generator.generate_cover_image(
+                title=final_title,  # Use the final title for generation
+                category=category,
+                domain=domain,
+                content_analysis=content_analysis
             )
             
-            # Combine results
+            # Create result in expected format
             result = {
-                **processed_image,
-                "selection_info": image_info,
-                "is_placeholder": False
+                "image_data": dalle_result["image_data"],
+                "image_base64": dalle_result["image_base64"],
+                "filename": dalle_result["filename"],
+                "mime_type": dalle_result["mime_type"],
+                "size_bytes": dalle_result["size_bytes"],
+                "dimensions": dalle_result["dimensions"],
+                "is_placeholder": dalle_result["is_placeholder"],
+                "text_removed": True,  # DALL-E generates without text overlay issues
+                "selection_info": {
+                    "method": "dalle_generated",
+                    "model": dalle_result.get("dalle_model", "dall-e-3"),
+                    "prompt_used": dalle_result.get("dalle_prompt", "Generated with DALL-E")
+                },
+                "processed_at": dalle_result.get("generated_at", self._get_timestamp())
             }
+            
+            # Add any additional DALL-E specific info
+            if "error" in dalle_result:
+                result["error"] = dalle_result["error"]
             
             self.logger.log_operation_success(
                 "select_and_process_image",
                 {
                     "filename": result["filename"],
-                    "size_bytes": result["size_bytes"]
+                    "size_bytes": result["size_bytes"],
+                    "is_placeholder": result["is_placeholder"]
                 },
                 operation_context
             )
@@ -451,7 +322,7 @@ class CoverImageProcessorTool:
             return result
             
         except Exception as e:
-            error_msg = f"Image selection and processing failed: {e}"
+            error_msg = f"DALL-E image generation failed: {e}"
             self.logger.log_operation_failure("select_and_process_image", error_msg, operation_context)
             
             # Return placeholder as fallback
@@ -464,7 +335,9 @@ class CoverImageProcessorTool:
                 "mime_type": "image/png",
                 "size_bytes": len(placeholder_result["image_data"]),
                 "is_placeholder": True,
-                "error": error_msg
+                "error": error_msg,
+                "text_removed": False,
+                "dimensions": (800, 600)
             }
     
     def _create_placeholder_image(self) -> Dict[str, Any]:

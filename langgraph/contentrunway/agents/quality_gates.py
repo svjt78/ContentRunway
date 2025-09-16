@@ -261,14 +261,19 @@ class FactCheckGateAgent:
     """Validates factual accuracy and verifies claims against sources."""
     
     def __init__(self, model_name: str = "gpt-4", enable_tool_selection: bool = True):
-        from app.services.rate_limiter import wrap_llm_with_caching
+        try:
+            from app.services.rate_limiter import wrap_llm_with_caching
+            has_caching = True
+        except ImportError:
+            logger.warning("Rate limiter not available, using basic LLM")
+            has_caching = False
         
         base_llm = ChatOpenAI(
             model=model_name,
             temperature=0.1,  # Very low temperature for factual accuracy
             max_tokens=3000
         )
-        self.base_llm = wrap_llm_with_caching(base_llm, "openai")
+        self.base_llm = wrap_llm_with_caching(base_llm, "openai") if has_caching else base_llm
         
         # Hybrid approach: bind validation tools for LLM-driven decisions
         if enable_tool_selection:
@@ -611,14 +616,19 @@ class DomainExpertiseGateAgent:
     """Validates domain-specific expertise and technical accuracy."""
     
     def __init__(self, model_name: str = "gpt-4", enable_tool_selection: bool = True):
-        from app.services.rate_limiter import wrap_llm_with_caching
+        try:
+            from app.services.rate_limiter import wrap_llm_with_caching
+            has_caching = True
+        except ImportError:
+            logger.warning("Rate limiter not available, using basic LLM")
+            has_caching = False
         
         base_llm = ChatOpenAI(
             model=model_name,
             temperature=0.2,  # Low temperature for technical accuracy
             max_tokens=3000
         )
-        self.base_llm = wrap_llm_with_caching(base_llm, "openai")
+        self.base_llm = wrap_llm_with_caching(base_llm, "openai") if has_caching else base_llm
         
         # Hybrid approach: bind validation tools for LLM-driven decisions
         if enable_tool_selection:

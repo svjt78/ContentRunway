@@ -79,18 +79,19 @@ class PDFGeneratorTool:
             leading=16
         ))
         
-        # Code style
-        self.styles.add(ParagraphStyle(
-            name='Code',
-            parent=self.styles['Normal'],
-            fontSize=10,
-            fontName='Courier',
-            backgroundColor=colors.HexColor('#f8f9fa'),
-            borderColor=colors.HexColor('#e9ecef'),
-            borderWidth=1,
-            borderPadding=8,
-            spaceAfter=12
-        ))
+        # Code style - check if already exists
+        if 'Code' not in self.styles:
+            self.styles.add(ParagraphStyle(
+                name='Code',
+                parent=self.styles['Normal'],
+                fontSize=10,
+                fontName='Courier',
+                backgroundColor=colors.HexColor('#f8f9fa'),
+                borderColor=colors.HexColor('#e9ecef'),
+                borderWidth=1,
+                borderPadding=8,
+                spaceAfter=12
+            ))
     
     async def generate_pdf_from_content(
         self,
@@ -201,7 +202,7 @@ class PDFGeneratorTool:
         # Add generation date
         story.append(Spacer(1, 1*inch))
         date_para = Paragraph(
-            f"Generated on {datetime.now().strftime('%B %d, %Y')}",
+            f"Written on {datetime.now().strftime('%B %d, %Y')}",
             self.styles['Author']
         )
         story.append(date_para)

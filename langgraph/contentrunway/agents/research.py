@@ -216,7 +216,6 @@ Format your response as JSON with domain names as keys and research queries as v
         response = await self.llm.ainvoke(messages)
         
         try:
-            import json
             domain_queries = json.loads(response.content)
             
             # Fallback to basic queries if parsing fails
@@ -325,7 +324,6 @@ Format your response as JSON array with objects containing: title, description, 
         response = await self.llm.ainvoke(messages)
         
         try:
-            import json
             topic_data = json.loads(response.content)
             
             topics = []
@@ -381,7 +379,6 @@ Focus on practical, realistic scoring that reflects current content marketing co
         
         try:
             response = await self.llm.ainvoke(messages)
-            import json
             scores_data = json.loads(response.content)
             
             # Apply scores to topics
@@ -441,6 +438,9 @@ Focus on practical, realistic scoring that reflects current content marketing co
             logger.info(f"Stored {stored_count}/{len(sources)} sources in Milvus")
             return stored_count > 0
             
+        except ImportError:
+            logger.warning("Vector service not available in standalone mode - skipping storage")
+            return False
         except Exception as e:
             logger.error(f"Failed to store sources in Milvus: {e}")
             return False
@@ -479,6 +479,9 @@ Focus on practical, realistic scoring that reflects current content marketing co
             logger.info(f"Found {len(unique_sources)} existing sources in Milvus for query: {query}")
             return unique_sources[:15]  # Limit to top 15
             
+        except ImportError:
+            logger.warning("Vector service not available in standalone mode - skipping existing research check")
+            return []
         except Exception as e:
             logger.error(f"Failed to check existing research: {e}")
             return []

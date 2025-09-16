@@ -2,6 +2,7 @@
 
 from typing import Dict, Any
 from ..tools.cover_image_processor_tool import CoverImageProcessorTool
+from ..tools.dalle_image_generator_tool import DalleImageGeneratorTool
 from ..utils.publisher_logger import PublisherLogger
 
 
@@ -11,6 +12,7 @@ class CoverImageAgent:
     def __init__(self):
         self.logger = PublisherLogger()
         self.image_processor = CoverImageProcessorTool()
+        self.dalle_generator = DalleImageGeneratorTool()
     
     async def execute(
         self,
@@ -47,12 +49,13 @@ class CoverImageAgent:
         self.logger.log_operation_start("cover_image_selection", operation_context)
         
         try:
-            # Select and process cover image
+            # Select and process cover image with title replacement (conservative approach)
             image_result = await self.image_processor.select_and_process_image(
                 category=classification,
                 content_analysis=classification_analysis,
-                content_title=final_title,
-                remove_text=True
+                content_title=content_dict.get('title', 'Untitled'),  # Use original title for selection
+                remove_text=False,  # Use conservative overlay approach instead of aggressive text removal
+                replacement_title=final_title  # Use generated title for replacement
             )
             
             # Create comprehensive result

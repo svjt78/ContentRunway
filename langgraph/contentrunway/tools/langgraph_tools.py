@@ -13,7 +13,7 @@ try:
     from .web_research import WebResearchTool
     from .seo_analysis import SEOAnalysisTool
     from .content_analysis import ContentAnalysisTool
-    from .fact_checking import FactCheckingTool
+    from .fact_checking import FactCheckTool
     from .technical_validation import TechnicalValidationTool
     from .compliance_tool import ComplianceTool
     from ..state.pipeline_state import ContentPipelineState
@@ -29,7 +29,7 @@ except ImportError as e:
     WebResearchTool = MockTool("WebResearchTool")
     SEOAnalysisTool = MockTool("SEOAnalysisTool")
     ContentAnalysisTool = MockTool("ContentAnalysisTool")
-    FactCheckingTool = MockTool("FactCheckingTool")
+    FactCheckTool = MockTool("FactCheckTool")
     TechnicalValidationTool = MockTool("TechnicalValidationTool")
     ComplianceTool = MockTool("ComplianceTool")
     ContentPipelineState = dict

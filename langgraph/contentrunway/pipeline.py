@@ -20,9 +20,9 @@ from .agents import (
     ContentEditorAgent,
     CritiqueAgent,
     ContentFormatterAgent,
-    HumanReviewGateAgent
+    HumanReviewGateAgent,
+    PublisherAgent
 )
-from .agents.publisher import PublisherAgent
 
 
 class ContentPipeline:
@@ -32,22 +32,130 @@ class ContentPipeline:
         """Initialize the content pipeline."""
         # Temporarily disable checkpointer due to version issues
         self.checkpointer = None # SqliteSaver.from_conn_string(checkpointer_path)
-        self.graph = self._build_graph()
+        self.graph = None  # Lazy load the graph
         
-        # Initialize agents
-        self.research_coordinator = ResearchCoordinatorAgent()
-        self.content_curator = ContentCuratorAgent()
-        self.seo_strategist = SEOStrategistAgent()
-        self.content_writer = ContentWriterAgent()
-        self.fact_check_gate = FactCheckGateAgent()
-        self.domain_expertise_gate = DomainExpertiseGateAgent()
-        self.style_critic_gate = StyleCriticGateAgent()
-        self.compliance_gate = ComplianceGateAgent()
-        self.content_editor = ContentEditorAgent()
-        self.critique_agent = CritiqueAgent()
-        self.content_formatter = ContentFormatterAgent()
-        self.human_review_gate = HumanReviewGateAgent()
-        self.publishing_agent = PublisherAgent()
+        # Use lazy loading for agents to prevent startup timeout
+        self._agents_initialized = False
+        self.research_coordinator = None
+        self.content_curator = None
+        self.seo_strategist = None
+        self.content_writer = None
+        self.fact_check_gate = None
+        self.domain_expertise_gate = None
+        self.style_critic_gate = None
+        self.compliance_gate = None
+        self.content_editor = None
+        self.critique_agent = None
+        self.content_formatter = None
+        self.human_review_gate = None
+        self.publishing_agent = None
+    
+    def _initialize_agents(self):
+        """Lazy initialization of all agents to prevent startup timeout."""
+        if self._agents_initialized:
+            return
+            
+        # Initialize agents individually with error handling per agent
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Initialize agents one by one to identify specific failures
+        try:
+            self.research_coordinator = ResearchCoordinatorAgent()
+            logger.info("ResearchCoordinatorAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize ResearchCoordinatorAgent: {e}")
+            self.research_coordinator = None
+            
+        try:
+            self.content_curator = ContentCuratorAgent()
+            logger.info("ContentCuratorAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize ContentCuratorAgent: {e}")
+            self.content_curator = None
+            
+        try:
+            self.seo_strategist = SEOStrategistAgent()
+            logger.info("SEOStrategistAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize SEOStrategistAgent: {e}")
+            self.seo_strategist = None
+            
+        try:
+            self.content_writer = ContentWriterAgent()
+            logger.info("ContentWriterAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize ContentWriterAgent: {e}")
+            self.content_writer = None
+            
+        try:
+            self.fact_check_gate = FactCheckGateAgent()
+            logger.info("FactCheckGateAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize FactCheckGateAgent: {e}")
+            self.fact_check_gate = None
+            
+        try:
+            self.domain_expertise_gate = DomainExpertiseGateAgent()
+            logger.info("DomainExpertiseGateAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize DomainExpertiseGateAgent: {e}")
+            self.domain_expertise_gate = None
+            
+        try:
+            self.style_critic_gate = StyleCriticGateAgent()
+            logger.info("StyleCriticGateAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize StyleCriticGateAgent: {e}")
+            self.style_critic_gate = None
+            
+        try:
+            self.compliance_gate = ComplianceGateAgent()
+            logger.info("ComplianceGateAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize ComplianceGateAgent: {e}")
+            self.compliance_gate = None
+            
+        try:
+            self.content_editor = ContentEditorAgent()
+            logger.info("ContentEditorAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize ContentEditorAgent: {e}")
+            self.content_editor = None
+            
+        try:
+            self.critique_agent = CritiqueAgent()
+            logger.info("CritiqueAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize CritiqueAgent: {e}")
+            self.critique_agent = None
+            
+        try:
+            self.content_formatter = ContentFormatterAgent()
+            logger.info("ContentFormatterAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize ContentFormatterAgent: {e}")
+            import traceback
+            logger.error(f"ContentFormatterAgent traceback: {traceback.format_exc()}")
+            self.content_formatter = None
+            
+        try:
+            self.human_review_gate = HumanReviewGateAgent()
+            logger.info("HumanReviewGateAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize HumanReviewGateAgent: {e}")
+            self.human_review_gate = None
+            
+        try:
+            self.publishing_agent = PublisherAgent()
+            logger.info("PublisherAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize PublisherAgent: {e}")
+            import traceback
+            logger.error(f"PublisherAgent traceback: {traceback.format_exc()}")
+            self.publishing_agent = None
+            
+        self._agents_initialized = True
     
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph StateGraph for the pipeline."""
@@ -452,6 +560,12 @@ class ContentPipeline:
         state["current_step"] = "formatting"
         
         try:
+            # Check if content_formatter was properly initialized
+            if self.content_formatter is None:
+                raise ValueError("ContentFormatterAgent was not properly initialized")
+            
+            print(f"Content formatter type: {type(self.content_formatter)}")
+            
             # Use content formatter to create platform variants
             formatting_results = await self.content_formatter.execute(
                 draft=state["draft"],
@@ -582,6 +696,13 @@ class ContentPipeline:
     
     async def execute_pipeline(self, initial_state: ContentPipelineState) -> ContentPipelineState:
         """Execute the complete content pipeline."""
+        # Initialize agents only when execution starts
+        self._initialize_agents()
+        
+        # Build graph if not already built
+        if self.graph is None:
+            self.graph = self._build_graph()
+            
         config = {"configurable": {"thread_id": initial_state["run_id"]}}
         
         # Execute the graph
@@ -593,6 +714,25 @@ class ContentPipeline:
             await self._emit_progress_update(state)
         
         return final_state
+    
+    def execute(self, initial_state: ContentPipelineState) -> ContentPipelineState:
+        """Synchronous wrapper for execute_pipeline - for compatibility."""
+        import asyncio
+        try:
+            # Run the async pipeline in a new event loop
+            return asyncio.run(self.execute_pipeline(initial_state))
+        except Exception as e:
+            # If async fails, return a fallback state
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Pipeline execution failed: {e}")
+            return {
+                "run_id": initial_state["run_id"],
+                "status": "failed",
+                "error_message": str(e),
+                "current_step": "failed",
+                "progress_percentage": 0.0
+            }
     
     async def _emit_progress_update(self, state: ContentPipelineState):
         """Emit progress updates for real-time monitoring."""

@@ -16,8 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.schemas.pipeline import PipelineRunCreate
 
-# Import redis service for state management
-from app.services.redis_service import redis_service
+# Redis service will be imported lazily when needed
 
 logger = logging.getLogger(__name__)
 
@@ -29,40 +28,32 @@ class PipelineService:
         self.db = db
     
     async def start_pipeline(self, pipeline_data: PipelineRunCreate) -> Dict[str, Any]:
-        """Start a new content pipeline run."""
+        """Start a new content pipeline run - returns immediately."""
+        import time
+        start_time = time.time()
+        logger.info(f"Starting pipeline creation for domain: {pipeline_data.domain_focus}")
+        
         try:
-            # Create new pipeline run
+            # Create new pipeline run with minimal data
             pipeline_run = PipelineRun(
                 tenant_id=pipeline_data.tenant_id,
                 domain_focus=pipeline_data.domain_focus,
                 quality_thresholds=pipeline_data.quality_thresholds,
-                status='initialized',
-                current_step='initialized',
-                progress_percentage=0.0,
+                status='initializing',
+                current_step='starting_pipeline',
+                progress_percentage=1.0,
                 retry_count=0
             )
             
             self.db.add(pipeline_run)
+            db_start = time.time()
             await self.db.commit()
-            await self.db.refresh(pipeline_run)
+            db_time = time.time() - db_start
+            logger.info(f"Database commit completed in {db_time:.3f}s")
+            # Skip refresh - we already have the data we need
             
-            # Store initial state in Redis for pipeline execution
-            initial_state = {
-                "run_id": str(pipeline_run.id),
-                "tenant_id": pipeline_run.tenant_id,
-                "status": pipeline_run.status,
-                "domain_focus": pipeline_data.domain_focus,
-                "quality_thresholds": pipeline_run.quality_thresholds,
-                "current_step": "initialized",
-                "progress_percentage": 0.0,
-                "created_at": pipeline_run.created_at
-            }
-            await redis_service.store_pipeline_state(str(pipeline_run.id), initial_state)
-            
-            # Trigger LangGraph pipeline execution using Celery
-            await self._trigger_pipeline_execution(pipeline_run.id, pipeline_data)
-            
-            return {
+            # Return immediately with pipeline info
+            pipeline_response = {
                 'id': str(pipeline_run.id),
                 'tenant_id': pipeline_run.tenant_id,
                 'status': pipeline_run.status,
@@ -81,10 +72,43 @@ class PipelineService:
                 'retry_count': 0
             }
             
+            # Schedule background initialization and execution (fire-and-forget)
+            import asyncio
+            asyncio.create_task(self._initialize_and_start_pipeline(pipeline_run.id, pipeline_data))
+            
+            total_time = time.time() - start_time
+            logger.info(f"Pipeline creation completed in {total_time:.3f}s for run_id: {pipeline_run.id}")
+            
+            return pipeline_response
+            
         except Exception as e:
             await self.db.rollback()
             logger.error(f"Failed to start pipeline: {e}")
             raise
+    
+    async def _initialize_and_start_pipeline(self, pipeline_id: uuid.UUID, pipeline_data: 'PipelineRunCreate'):
+        """Background task to initialize Redis state and start pipeline execution."""
+        try:
+            # Store initial state in Redis for pipeline execution
+            from app.services.redis_service import redis_service
+            initial_state = {
+                "run_id": str(pipeline_id),
+                "tenant_id": pipeline_data.tenant_id,
+                "status": "initializing",
+                "domain_focus": pipeline_data.domain_focus,
+                "quality_thresholds": pipeline_data.quality_thresholds,
+                "current_step": "starting_pipeline",
+                "progress_percentage": 1.0,
+                "created_at": datetime.now().isoformat()
+            }
+            await redis_service.store_pipeline_state(str(pipeline_id), initial_state)
+            
+            # Trigger LangGraph pipeline execution using Celery
+            await self._trigger_pipeline_execution(pipeline_id, pipeline_data)
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize pipeline {pipeline_id}: {e}")
+            await self._update_pipeline_error(pipeline_id, f"Failed to initialize pipeline: {e}")
     
     async def _trigger_pipeline_execution(self, pipeline_id: uuid.UUID, pipeline_data: 'PipelineRunCreate'):
         """Trigger pipeline execution using Celery background task."""
@@ -92,7 +116,7 @@ class PipelineService:
             # Import here to avoid circular imports
             from app.tasks.pipeline_tasks import execute_content_pipeline
             
-            # Prepare pipeline configuration
+            # Prepare minimal pipeline configuration
             pipeline_config = {
                 "tenant_id": pipeline_data.tenant_id,
                 "domain_focus": pipeline_data.domain_focus,
@@ -100,17 +124,35 @@ class PipelineService:
                 "research_query": getattr(pipeline_data, 'research_query', None)
             }
             
-            # Launch background task
+            # Launch background task with longer delay to ensure all setup is complete
             task = execute_content_pipeline.apply_async(
                 args=[str(pipeline_id), pipeline_config],
-                task_id=f"pipeline_{pipeline_id}"
+                task_id=f"pipeline_{pipeline_id}",
+                countdown=5  # Longer delay to ensure all initialization is complete
             )
             
-            logger.info(f"Launched pipeline execution task {task.id} for run {pipeline_id}")
+            logger.info(f"Scheduled pipeline execution task {task.id} for run {pipeline_id}")
             
         except Exception as e:
             logger.error(f"Failed to trigger pipeline execution: {e}")
-            raise
+            # Don't raise here - the pipeline run was already created successfully
+            # Just log the error and let the user see it in the pipeline status
+            await self._update_pipeline_error(pipeline_id, f"Failed to start pipeline execution: {e}")
+    
+    async def _update_pipeline_error(self, pipeline_id: uuid.UUID, error_message: str):
+        """Update pipeline run with error message."""
+        try:
+            result = await self.db.execute(
+                select(PipelineRun).where(PipelineRun.id == pipeline_id)
+            )
+            pipeline_run = result.scalar_one_or_none()
+            
+            if pipeline_run:
+                pipeline_run.status = 'failed'
+                pipeline_run.error_message = error_message
+                await self.db.commit()
+        except Exception as e:
+            logger.error(f"Failed to update pipeline error: {e}")
     
     async def get_pipeline_run(self, run_id: uuid.UUID) -> Optional[Dict[str, Any]]:
         """Get a specific pipeline run by ID."""
@@ -229,6 +271,7 @@ class PipelineService:
             await self.db.commit()
             
             # Update Redis to signal pause (would be picked up by running pipeline)
+            from app.services.redis_service import redis_service
             await redis_service.store_pipeline_checkpoint(str(run_id), {
                 "action": "pause",
                 "timestamp": datetime.now().isoformat()
@@ -285,6 +328,7 @@ class PipelineService:
             await self.db.commit()
             
             # Signal cancellation via Redis (pipeline will check and stop)
+            from app.services.redis_service import redis_service
             await redis_service.store_pipeline_checkpoint(str(run_id), {
                 "action": "cancel",
                 "timestamp": datetime.now().isoformat()

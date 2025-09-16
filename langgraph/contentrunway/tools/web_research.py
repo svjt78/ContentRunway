@@ -67,11 +67,14 @@ class WebResearchTool:
         """Search domain-specific sources for relevant content."""
         # Check cache first if enabled
         if use_cache:
-            from app.services.redis_service import redis_service
-            cached_results = await redis_service.get_cached_research_results(query, domain)
-            if cached_results:
-                logger.info(f"Using cached research results for {domain}:{query}")
-                return cached_results[:max_sources]
+            try:
+                from app.services.redis_service import redis_service
+                cached_results = await redis_service.get_cached_research_results(query, domain)
+                if cached_results:
+                    logger.info(f"Using cached research results for {domain}:{query}")
+                    return cached_results[:max_sources]
+            except ImportError:
+                logger.warning("Redis service not available in standalone mode - skipping cache")
         
         sources = []
         
@@ -97,8 +100,11 @@ class WebResearchTool:
         
         # Cache results if enabled and we have results
         if use_cache and final_sources:
-            from app.services.redis_service import redis_service
-            await redis_service.cache_research_results(query, domain, final_sources)
+            try:
+                from app.services.redis_service import redis_service
+                await redis_service.cache_research_results(query, domain, final_sources)
+            except ImportError:
+                logger.warning("Redis service not available in standalone mode - skipping cache storage")
         
         return final_sources
     

@@ -127,3 +127,31 @@ async def get_pipeline_stats(
     service = PipelineService(db)
     stats = await service.get_pipeline_stats()
     return stats
+
+@router.get("/health")
+async def pipeline_health_check(
+    db: AsyncSession = Depends(get_db)
+):
+    """Health check endpoint to monitor database performance."""
+    import time
+    start_time = time.time()
+    
+    try:
+        # Simple database query to test connection speed
+        from sqlalchemy import text
+        result = await db.execute(text("SELECT 1"))
+        result.fetchone()
+        
+        db_time = time.time() - start_time
+        
+        return {
+            "status": "healthy",
+            "database_response_time_ms": round(db_time * 1000, 2),
+            "connection_pool_status": "ok"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "database_response_time_ms": round((time.time() - start_time) * 1000, 2)
+        }

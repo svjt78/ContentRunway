@@ -15,44 +15,42 @@ class ContentClassificationTool:
         self.client = openai.AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
         # Classification prompts
-        self.classification_prompt = """
-        You are an expert content classifier for a digital publishing platform. 
-        
-        Analyze the following content and classify it as either "Blog" or "Product" based on these criteria:
-        
-        **Product Classification:**
-        - Content that describes, reviews, or discusses specific products, platforms, services, or tools
-        - Content that includes product specifications, features, or comparisons
-        - Content that provides tutorials or guides for using specific products
-        - Content that discusses product strategies, implementations, or use cases
-        
-        **Blog Classification:**
-        - General informational or educational content
-        - Industry insights, trends, or analysis that don't focus on specific products
-        - Conceptual discussions about technologies, methodologies, or practices
-        - Opinion pieces, thought leadership, or general commentary
-        - Educational content about broad topics rather than specific products
-        
-        **Content Domains to Consider:**
-        - IT Insurance (regulatory compliance, digital transformation, insurtech)
-        - AI Research (technical AI content, ML developments, LLM integrations)
-        - Agentic AI (multi-agent systems, LangGraph, agent orchestration)
-        
-        Respond with a JSON object containing:
-        {
-            "classification": "Blog" or "Product",
-            "confidence_score": 0.0-1.0,
-            "reasoning": "Brief explanation of classification decision",
-            "key_indicators": ["list", "of", "key", "words", "or", "phrases", "that", "influenced", "decision"],
-            "domain": "Primary domain (IT Insurance, AI Research, Agentic AI, or General)"
-        }
-        
-        Content to classify:
-        
-        Title: {title}
-        
-        Content: {content}
-        """
+        self.classification_prompt = """You are an expert content classifier for a digital publishing platform. 
+
+Analyze the following content and classify it as either "Blog" or "Product" based on these criteria:
+
+**Product Classification:**
+- Content that describes, reviews, or discusses specific products, platforms, services, or tools
+- Content that includes product specifications, features, or comparisons
+- Content that provides tutorials or guides for using specific products
+- Content that discusses product strategies, implementations, or use cases
+
+**Blog Classification:**
+- General informational or educational content
+- Industry insights, trends, or analysis that don't focus on specific products
+- Conceptual discussions about technologies, methodologies, or practices
+- Opinion pieces, thought leadership, or general commentary
+- Educational content about broad topics rather than specific products
+
+**Content Domains to Consider:**
+- IT Insurance (regulatory compliance, digital transformation, insurtech)
+- AI Research (technical AI content, ML developments, LLM integrations)
+- Agentic AI (multi-agent systems, LangGraph, agent orchestration)
+
+Respond with ONLY a valid JSON object in this exact format:
+{{
+    "classification": "Blog",
+    "confidence_score": 0.85,
+    "reasoning": "Brief explanation of classification decision",
+    "key_indicators": ["testing", "best practices", "guide"],
+    "domain": "Technical"
+}}
+
+Content to classify:
+
+Title: {title}
+
+Content: {content}"""
     
     async def classify_content(
         self,
@@ -112,14 +110,32 @@ class ContentClassificationTool:
             
             try:
                 classification_result = json.loads(response_content)
-            except json.JSONDecodeError:
-                # Fallback parsing if JSON is wrapped in code blocks
+            except json.JSONDecodeError as parse_error:
+                # Enhanced fallback parsing
                 import re
-                json_match = re.search(r'```json\n(.*?)\n```', response_content, re.DOTALL)
-                if json_match:
-                    classification_result = json.loads(json_match.group(1))
-                else:
-                    raise Exception("Invalid JSON response from OpenAI")
+                
+                # Try multiple JSON extraction patterns
+                patterns = [
+                    r'```json\n(.*?)\n```',
+                    r'```\n(.*?)\n```', 
+                    r'{.*}',
+                    r'\{[\s\S]*\}'
+                ]
+                
+                classification_result = None
+                for pattern in patterns:
+                    json_match = re.search(pattern, response_content, re.DOTALL)
+                    if json_match:
+                        try:
+                            extracted_json = json_match.group(1) if pattern.startswith('```') else json_match.group(0)
+                            classification_result = json.loads(extracted_json)
+                            break
+                        except json.JSONDecodeError:
+                            continue
+                
+                if classification_result is None:
+                    self.logger.log_warning("classify_content", f"Failed to parse OpenAI response: {response_content[:200]}...")
+                    raise Exception(f"Invalid JSON response from OpenAI: {parse_error}")
             
             # Validate classification result
             classification = classification_result.get("classification", "Blog")
@@ -155,6 +171,10 @@ class ContentClassificationTool:
             error_msg = f"Content classification failed: {e}"
             self.logger.log_operation_failure("classify_content", error_msg, operation_context)
             
+            # Check if it's an API key issue
+            if "api_key" in str(e).lower() or "unauthorized" in str(e).lower():
+                self.logger.log_error("classify_content", "OpenAI API key missing or invalid. Please set OPENAI_API_KEY environment variable.")
+            
             # Return fallback classification
             fallback_analysis = {
                 "classification": "Blog",
@@ -163,7 +183,8 @@ class ContentClassificationTool:
                 "key_indicators": [],
                 "domain": "General",
                 "model_used": "fallback",
-                "error": error_msg
+                "error": error_msg,
+                "fallback_used": True
             }
             
             return "Blog", fallback_analysis

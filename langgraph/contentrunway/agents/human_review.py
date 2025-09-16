@@ -1,6 +1,6 @@
 """Human Review Gate Agent - Manages human review process and feedback collection."""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 import uuid
 from datetime import datetime, timedelta

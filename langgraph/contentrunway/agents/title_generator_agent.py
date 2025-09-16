@@ -15,51 +15,56 @@ class TitleGeneratorAgent:
         self.client = openai.AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
         # Title generation prompt
-        self.title_generation_prompt = """
-        You are an expert content marketing specialist and SEO copywriter. 
-        
-        Generate 4 compelling, optimized titles for the following content:
-        
-        **Content Information:**
-        - Original Title: {original_title}
-        - Classification: {classification}
-        - Domain: {domain}
-        - Content Summary: {content_summary}
-        - Key Indicators: {key_indicators}
-        
-        **Title Requirements:**
-        - Maximum 60 characters for SEO optimization
-        - Clear, engaging, and descriptive
-        - Include relevant keywords naturally
-        - Suitable for {classification} category
-        - Professional tone appropriate for {domain} domain
-        - Compelling enough to drive clicks
-        
-        **Title Types to Generate:**
-        1. SEO-Optimized: Focus on search engine optimization and keyword inclusion
-        2. Engagement-Focused: Emphasize curiosity and click-through appeal
-        3. Descriptive: Clear, straightforward description of content
-        4. Benefits-Driven: Highlight value proposition and benefits to reader
-        
-        Respond with JSON format:
-        {
-            "titles": [
-                {
-                    "title": "<title text>",
-                    "type": "seo_optimized|engagement_focused|descriptive|benefits_driven",
-                    "character_count": <number>,
-                    "score": <0.0-1.0 quality score>,
-                    "reasoning": "<why this title is effective>"
-                }
-            ],
-            "recommended_title": {
-                "title": "<best title>",
-                "type": "<type>",
-                "overall_score": <0.0-1.0>,
-                "reasoning": "<why this is the best choice>"
-            }
-        }
-        """
+        self.title_generation_prompt = """You are an expert content marketing specialist and SEO copywriter. 
+
+Generate 4 compelling, optimized titles for the following content:
+
+**Content Information:**
+- Original Title: {original_title}
+- Classification: {classification}
+- Domain: {domain}
+- Content Summary: {content_summary}
+- Key Indicators: {key_indicators}
+
+**Title Requirements:**
+- Maximum 60 characters for SEO optimization
+- Clear, engaging, and descriptive
+- Include relevant keywords naturally
+- Suitable for {classification} category
+- Professional tone appropriate for {domain} domain
+- Compelling enough to drive clicks
+
+**Title Types to Generate:**
+1. SEO-Optimized: Focus on search engine optimization and keyword inclusion
+2. Engagement-Focused: Emphasize curiosity and click-through appeal
+3. Descriptive: Clear, straightforward description of content
+4. Benefits-Driven: Highlight value proposition and benefits to reader
+
+Respond with ONLY valid JSON in this exact format:
+{{
+    "titles": [
+        {{
+            "title": "Complete Testing Guide: Best Practices",
+            "type": "seo_optimized",
+            "character_count": 36,
+            "score": 0.9,
+            "reasoning": "SEO-friendly with key terms"
+        }},
+        {{
+            "title": "Testing Secrets Every Developer Needs",
+            "type": "engagement_focused", 
+            "character_count": 34,
+            "score": 0.8,
+            "reasoning": "Creates curiosity and targets audience"
+        }}
+    ],
+    "recommended_title": {{
+        "title": "Complete Testing Guide: Best Practices",
+        "type": "seo_optimized",
+        "overall_score": 0.9,
+        "reasoning": "Best balance of SEO and readability"
+    }}
+}}"""
     
     async def execute(
         self,
@@ -196,14 +201,32 @@ class TitleGeneratorAgent:
             
             try:
                 titles_result = json.loads(response_content)
-            except json.JSONDecodeError:
-                # Fallback parsing
+            except json.JSONDecodeError as parse_error:
+                # Enhanced fallback parsing
                 import re
-                json_match = re.search(r'```json\n(.*?)\n```', response_content, re.DOTALL)
-                if json_match:
-                    titles_result = json.loads(json_match.group(1))
-                else:
-                    raise Exception("Invalid JSON response from OpenAI")
+                
+                # Try multiple JSON extraction patterns
+                patterns = [
+                    r'```json\n(.*?)\n```',
+                    r'```\n(.*?)\n```',
+                    r'{.*}',
+                    r'\{[\s\S]*\}'
+                ]
+                
+                titles_result = None
+                for pattern in patterns:
+                    json_match = re.search(pattern, response_content, re.DOTALL)
+                    if json_match:
+                        try:
+                            extracted_json = json_match.group(1) if pattern.startswith('```') else json_match.group(0)
+                            titles_result = json.loads(extracted_json)
+                            break
+                        except json.JSONDecodeError:
+                            continue
+                
+                if titles_result is None:
+                    self.logger.log_warning("generate_titles", f"Failed to parse OpenAI response: {response_content[:200]}...")
+                    raise Exception(f"Invalid JSON response from OpenAI: {parse_error}")
             
             # Validate and process titles
             processed_titles = self._process_and_validate_titles(
@@ -225,8 +248,14 @@ class TitleGeneratorAgent:
             }
             
         except Exception as e:
-            self.logger.log_error("generate_titles", f"OpenAI title generation failed: {e}")
-            raise
+            error_msg = f"OpenAI title generation failed: {e}"
+            self.logger.log_error("generate_titles", error_msg)
+            
+            # Check if it's an API key issue
+            if "api_key" in str(e).lower() or "unauthorized" in str(e).lower():
+                self.logger.log_error("generate_titles", "OpenAI API key missing or invalid. Please set OPENAI_API_KEY environment variable.")
+            
+            raise Exception(error_msg)
     
     def _process_and_validate_titles(
         self,

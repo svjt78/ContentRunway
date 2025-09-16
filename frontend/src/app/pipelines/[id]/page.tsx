@@ -5,6 +5,7 @@ import { getPipelineRun } from '@/lib/api'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import { useParams } from 'next/navigation'
+import api from '@/lib/api'
 
 export default function PipelineRunPage() {
   const params = useParams()
@@ -15,6 +16,16 @@ export default function PipelineRunPage() {
     queryFn: () => getPipelineRun(runId),
     refetchInterval: 5000,
     enabled: !!runId,
+  })
+
+  // Fetch content drafts for completed pipelines
+  const { data: contentDrafts } = useQuery({
+    queryKey: ['pipeline-content', runId],
+    queryFn: async () => {
+      const response = await api.get(`/content/drafts/${runId}`)
+      return response.data
+    },
+    enabled: !!runId && run?.status === 'completed',
   })
 
   if (error) {
@@ -210,6 +221,64 @@ export default function PipelineRunPage() {
                   {run.final_quality_score >= 0.85 ? 'Meets quality threshold' : 'Below quality threshold'}
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Generated Content */}
+        {contentDrafts && contentDrafts.length > 0 && (
+          <div className="card mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Generated Content</h2>
+              <Link 
+                href="/content" 
+                className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+              >
+                View All Content
+              </Link>
+            </div>
+            <div className="space-y-3">
+              {contentDrafts.slice(0, 3).map((draft: any) => (
+                <div 
+                  key={draft.id}
+                  className="p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h3 className="font-medium text-gray-900 mb-1">
+                        {draft.title}
+                      </h3>
+                      {draft.subtitle && (
+                        <p className="text-gray-600 text-sm mb-2">{draft.subtitle}</p>
+                      )}
+                      <div className="flex items-center space-x-4 text-xs text-gray-500">
+                        <span>{draft.word_count} words</span>
+                        <span>{draft.reading_time_minutes} min read</span>
+                        <span>Stage: {draft.stage}</span>
+                        <span>v{draft.version}</span>
+                      </div>
+                    </div>
+                    {draft.readability_score && (
+                      <div className="ml-4 text-right">
+                        <div className="text-xs text-gray-500">Readability</div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {draft.readability_score.toFixed(1)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {contentDrafts.length > 3 && (
+                <div className="text-center pt-2">
+                  <Link 
+                    href="/content"
+                    className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                  >
+                    View {contentDrafts.length - 3} more content items →
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
         )}
