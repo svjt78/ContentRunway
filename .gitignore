@@ -80,3 +80,6 @@ CLAUDE.md
 
 # Claude Code configuration
 .claude/
+
+# Documentation directory (local only)
+docs/
