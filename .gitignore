@@ -59,6 +59,12 @@ models/
 *.pkl
 *.pickle
 
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
 # Database
 *.db
 *.sqlite
@@ -83,3 +89,26 @@ CLAUDE.md
 
 # Documentation directory (local only)
 docs/
+
+# Test files and artifacts
+# Ad-hoc test scripts in root directory
+test_*.py
+# Test output and results
+test_results/
+*_test_results.json
+# Test image directories
+*_test_images/
+*_sample_images/
+final_test_images/
+# Analysis and planning documents (temporary)
+AGENT_TESTING_STRATEGY.md
+DALL-E_INTEGRATION_SUMMARY.md
+DATA_STORAGE_ANALYSIS.md
+DIGITALDOSSIER_AUTO_GENRE_CREATION_SPEC.md
+IMPLEMENTATION_PLAN.md
+LANGGRAPH_FIX_PLAN.md
+PIPELINE_ANALYSIS.md
+PIPELINE_ORCHESTRATION_STATUS.md
+BLOG_APP_MODULE_CONFLICT_RESOLUTION.md
+# Ad-hoc scripts
+redis_commands.sh
