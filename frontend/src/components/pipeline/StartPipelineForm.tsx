@@ -13,9 +13,10 @@ interface StartPipelineFormProps {
 interface PipelineFormData {
   research_query: string
   domain_focus: string[]
+  target_word_count: number
   quality_thresholds: {
     overall: number
-    technical: number
+    fact_check: number
     domain_expertise: number
     style_consistency: number
     compliance: number
@@ -35,11 +36,12 @@ export function StartPipelineForm({ onClose, onStart }: StartPipelineFormProps) 
     defaultValues: {
       research_query: '',
       domain_focus: ['ai'],
+      target_word_count: 500,
       quality_thresholds: {
         overall: 0.85,
-        technical: 0.90,
+        fact_check: 0.90,
         domain_expertise: 0.90,
-        style_consistency: 0.85,
+        style_consistency: 0.88,
         compliance: 0.95
       }
     }
@@ -134,6 +136,33 @@ export function StartPipelineForm({ onClose, onStart }: StartPipelineFormProps) 
           )}
         </div>
 
+        {/* Target Content Length */}
+        <div>
+          <label className="block text-sm font-medium text-secondary-700 mb-2">
+            Target Length (words)
+          </label>
+          <input
+            type="number"
+            min="50"
+            max="2000"
+            step="25"
+            {...register('target_word_count', { 
+              required: 'Please specify target content length',
+              min: { value: 50, message: 'Minimum length is 50 words' },
+              max: { value: 2000, message: 'Maximum length is 2000 words' }
+            })}
+            className="input-field"
+            placeholder="500"
+            disabled={startPipelineMutation.isPending}
+          />
+          {errors.target_word_count && (
+            <p className="text-red-600 text-sm mt-1">{errors.target_word_count.message}</p>
+          )}
+          <p className="text-secondary-600 text-xs mt-1">
+            Approximate word count of generated content. Default: 500 words (~2500-3000 characters)
+          </p>
+        </div>
+
         {/* Quality Thresholds */}
         <div>
           <label className="block text-sm font-medium text-secondary-700 mb-3">
@@ -153,13 +182,13 @@ export function StartPipelineForm({ onClose, onStart }: StartPipelineFormProps) 
               />
             </div>
             <div>
-              <label className="block text-xs text-secondary-600 mb-1">Technical</label>
+              <label className="block text-xs text-secondary-600 mb-1">Fact Check</label>
               <input
                 type="number"
                 step="0.05"
                 min="0"
                 max="1"
-                {...register('quality_thresholds.technical')}
+                {...register('quality_thresholds.fact_check')}
                 className="input-field text-sm"
                 disabled={startPipelineMutation.isPending}
               />

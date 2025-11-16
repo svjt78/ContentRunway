@@ -10,6 +10,7 @@ class PipelineRunCreate(BaseModel):
     """Schema for creating a new pipeline run."""
     research_query: str = Field(..., description="Research topic or query")
     domain_focus: List[str] = Field(..., description="List of domain focuses")
+    target_word_count: int = Field(default=500, ge=50, le=2000, description="Target content length in words")
     quality_thresholds: Dict[str, float] = Field(
         default={
             "overall": 0.85,
@@ -29,6 +30,7 @@ class PipelineRunResponse(BaseModel):
     tenant_id: str
     status: str
     domain_focus: List[str]
+    target_word_count: int
     quality_thresholds: Dict[str, float]
     created_at: datetime
     started_at: Optional[datetime] = None
@@ -41,6 +43,7 @@ class PipelineRunResponse(BaseModel):
     published_urls: List[str] = []
     error_message: Optional[str] = None
     retry_count: int = 0
+    review_session_id: Optional[str] = None
 
 
 class PipelineStatus(BaseModel):

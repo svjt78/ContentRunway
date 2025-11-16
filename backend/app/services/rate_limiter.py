@@ -171,6 +171,23 @@ class CachedLLMWrapper:
         self.llm = llm
         self.service_name = service_name
     
+    def __getattr__(self, name):
+        """Delegate unknown methods to the underlying LLM."""
+        if hasattr(self.llm, name):
+            attr = getattr(self.llm, name)
+            # If it's a method that returns a new LLM instance (like bind_tools),
+            # wrap the result in our caching wrapper
+            if callable(attr) and name in ['bind_tools', 'bind', 'with_config']:
+                def wrapper(*args, **kwargs):
+                    result = attr(*args, **kwargs)
+                    # If the result is an LLM-like object, wrap it
+                    if hasattr(result, 'ainvoke') or hasattr(result, 'invoke'):
+                        return CachedLLMWrapper(result, self.service_name)
+                    return result
+                return wrapper
+            return attr
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+    
     async def ainvoke_cached(
         self,
         messages,

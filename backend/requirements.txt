@@ -13,8 +13,7 @@ alembic==1.13.0
 redis[hiredis]==5.0.1
 celery==5.3.4
 
-# LangGraph and OpenAI
-langgraph==0.2.38
+# LangChain and OpenAI (LangGraph removed - using Celery orchestration)
 langchain==0.3.7
 langchain-openai==0.2.8
 langchain-community==0.3.7

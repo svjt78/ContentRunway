@@ -29,7 +29,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./langgraph:/app/langgraph
+      - ./agents:/app/agents
     environment:
       - DATABASE_URL=postgresql://contentrunway:password123@postgres:5432/contentrunway
       - REDIS_URL=redis://redis:6379/0
@@ -38,7 +38,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - DIGITALDOSSIER_BASE_URL=http://localhost:3003
+      - DIGITALDOSSIER_BASE_URL=${DIGITALDOSSIER_BASE_URL}
       - DIGITALDOSSIER_API_TOKEN=${DIGITALDOSSIER_API_TOKEN}
       - DIGITALDOSSIER_ADMIN_EMAIL=${DIGITALDOSSIER_ADMIN_EMAIL}
       - DIGITALDOSSIER_ADMIN_PASSWORD=${DIGITALDOSSIER_ADMIN_PASSWORD}
@@ -58,23 +58,25 @@ services:
     networks:
       - app-network
 
-  # LangGraph Worker - Dedicated pipeline execution
-  langgraph-worker:
+  # Celery Worker - Dedicated pipeline execution
+  celery-worker:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
     command: celery -A app.worker worker --loglevel=info
+    network_mode: host  # Enable host network access for DigitalDossier API
     volumes:
       - ./backend:/app
-      - ./langgraph:/app/langgraph
+      - ./agents:/app/agents
     environment:
-      - DATABASE_URL=postgresql://contentrunway:password123@postgres:5432/contentrunway
-      - REDIS_URL=redis://redis:6379/0
-      - MILVUS_HOST=milvus-standalone
+      - DATABASE_URL=postgresql://contentrunway:password123@localhost:5434/contentrunway
+      - REDIS_URL=redis://localhost:6379/0
+      - MILVUS_HOST=localhost
       - MILVUS_PORT=19530
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Load API keys from .env file, ignoring system environment
+      - OPENAI_API_KEY
+      - GOOGLE_API_KEY
+      - ANTHROPIC_API_KEY
       - DIGITALDOSSIER_BASE_URL=http://localhost:3003
       - DIGITALDOSSIER_API_TOKEN=${DIGITALDOSSIER_API_TOKEN}
       - DIGITALDOSSIER_ADMIN_EMAIL=${DIGITALDOSSIER_ADMIN_EMAIL}
@@ -90,8 +92,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    networks:
-      - app-network
 
   # PostgreSQL Database with local volume
   postgres:
@@ -100,7 +100,7 @@ services:
       - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d
+      - ./backend/migrations/versions:/docker-entrypoint-initdb.d
     environment:
       - POSTGRES_DB=contentrunway
       - POSTGRES_USER=contentrunway

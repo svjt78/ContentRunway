@@ -38,6 +38,7 @@ class PipelineService:
             pipeline_run = PipelineRun(
                 tenant_id=pipeline_data.tenant_id,
                 domain_focus=pipeline_data.domain_focus,
+                target_word_count=pipeline_data.target_word_count,
                 quality_thresholds=pipeline_data.quality_thresholds,
                 status='initializing',
                 current_step='starting_pipeline',
@@ -58,6 +59,7 @@ class PipelineService:
                 'tenant_id': pipeline_run.tenant_id,
                 'status': pipeline_run.status,
                 'domain_focus': pipeline_run.domain_focus,
+                'target_word_count': pipeline_run.target_word_count,
                 'quality_thresholds': pipeline_run.quality_thresholds,
                 'created_at': pipeline_run.created_at,
                 'started_at': None,
@@ -96,6 +98,7 @@ class PipelineService:
                 "tenant_id": pipeline_data.tenant_id,
                 "status": "initializing",
                 "domain_focus": pipeline_data.domain_focus,
+                "target_word_count": pipeline_data.target_word_count,
                 "quality_thresholds": pipeline_data.quality_thresholds,
                 "current_step": "starting_pipeline",
                 "progress_percentage": 1.0,
@@ -120,6 +123,7 @@ class PipelineService:
             pipeline_config = {
                 "tenant_id": pipeline_data.tenant_id,
                 "domain_focus": pipeline_data.domain_focus,
+                "target_word_count": pipeline_data.target_word_count,
                 "quality_thresholds": pipeline_data.quality_thresholds,
                 "research_query": getattr(pipeline_data, 'research_query', None)
             }
@@ -165,11 +169,47 @@ class PipelineService:
             if not pipeline_run:
                 return None
             
-            return {
+            # WORKAROUND: Force refresh the object from database to get latest review_session_id
+            try:
+                from sqlalchemy import text
+                logger.info(f"PIPELINE SERVICE DEBUG: Querying review_session_id for run_id: {run_id}")
+                fresh_result = await self.db.execute(
+                    text("SELECT review_session_id FROM pipeline_runs WHERE id = :run_id"),
+                    {"run_id": str(run_id)}
+                )
+                fresh_session_id = fresh_result.scalar()
+                
+                # Fallback: check latest human review record if pipeline_run column is empty
+                if not fresh_session_id:
+                    fallback_result = await self.db.execute(
+                        text("""
+                            SELECT id 
+                            FROM human_reviews 
+                            WHERE pipeline_run_id = :run_id 
+                            ORDER BY created_at DESC 
+                            LIMIT 1
+                        """),
+                        {"run_id": str(run_id)}
+                    )
+                    fallback_session_id = fallback_result.scalar()
+                    if fallback_session_id:
+                        logger.info(
+                            "PIPELINE SERVICE DEBUG: Using fallback human_review ID",
+                            extra={"run_id": str(run_id), "fallback_session_id": str(fallback_session_id)}
+                        )
+                        fresh_session_id = fallback_session_id
+                logger.info(f"PIPELINE SERVICE DEBUG: Final DB-derived review_session_id: {fresh_session_id}")
+            except Exception as e:
+                fresh_session_id = None
+                logger.error(f"Error getting review session ID for run {run_id}: {e}")
+            
+            # Base pipeline data from database
+            pipeline_data = {
                 'id': str(pipeline_run.id),
                 'tenant_id': pipeline_run.tenant_id,
                 'status': pipeline_run.status,
                 'domain_focus': pipeline_run.domain_focus,
+                'target_word_count': pipeline_run.target_word_count,
                 'quality_thresholds': pipeline_run.quality_thresholds,
                 'created_at': pipeline_run.created_at.isoformat(),
                 'started_at': pipeline_run.started_at.isoformat() if pipeline_run.started_at else None,
@@ -181,8 +221,53 @@ class PipelineService:
                 'human_approved': pipeline_run.human_approved,
                 'published_urls': pipeline_run.published_urls or [],
                 'error_message': pipeline_run.error_message,
-                'retry_count': pipeline_run.retry_count
+                'retry_count': pipeline_run.retry_count,
+                'review_session_id': str(fresh_session_id) if fresh_session_id else None
             }
+            
+            logger.info(
+                "PIPELINE SERVICE DEBUG: Final response base review_session_id",
+                extra={"run_id": str(run_id), "review_session_id": pipeline_data['review_session_id']}
+            )
+            
+            # Try to get additional data from Redis state (includes review_session_id, etc.)
+            try:
+                from app.services.redis_service import redis_service
+                redis_state = await redis_service.get_pipeline_state(str(run_id))
+                logger.info("PIPELINE SERVICE DEBUG: Redis state loaded for pipeline run", extra={"run_id": str(run_id)})
+                if redis_state:
+                    # Merge in Redis state data that's not in database
+                    if 'review_session_id' in redis_state:
+                        logger.info(
+                            "PIPELINE SERVICE DEBUG: Redis review session ID present",
+                            extra={
+                                "run_id": str(run_id),
+                                "redis_review_session_id": redis_state['review_session_id'],
+                                "db_review_session_id": pipeline_data['review_session_id']
+                            }
+                        )
+                        # Only override if Redis has a non-null value
+                        if redis_state['review_session_id'] is not None:
+                            pipeline_data['review_session_id'] = redis_state['review_session_id']
+                            logger.info(
+                                "PIPELINE SERVICE DEBUG: review_session_id overridden from Redis",
+                                extra={"run_id": str(run_id), "final_review_session_id": pipeline_data['review_session_id']}
+                            )
+                    if 'review_session_url' in redis_state:
+                        pipeline_data['review_session_url'] = redis_state['review_session_url']
+                    
+                    # Update status and step from Redis if more recent
+                    if redis_state.get('current_step'):
+                        pipeline_data['current_step'] = redis_state['current_step']
+                    if redis_state.get('progress_percentage'):
+                        pipeline_data['progress_percentage'] = redis_state['progress_percentage']
+                        
+            except Exception as redis_error:
+                print(f"PIPELINE SERVICE DEBUG: Redis error: {redis_error}")
+                logger.warning(f"Failed to get Redis state for pipeline {run_id}: {redis_error}")
+                # Continue with database data only
+            
+            return pipeline_data
             
         except Exception as e:
             logger.error(f"Failed to get pipeline run {run_id}: {e}")
@@ -207,12 +292,15 @@ class PipelineService:
             result = await self.db.execute(query)
             pipeline_runs = result.scalars().all()
             
-            return [
-                {
+            # Convert to list and enrich with Redis data
+            pipeline_list = []
+            for run in pipeline_runs:
+                pipeline_data = {
                     'id': str(run.id),
                     'tenant_id': run.tenant_id,
                     'status': run.status,
                     'domain_focus': run.domain_focus,
+                    'target_word_count': run.target_word_count,
                     'quality_thresholds': run.quality_thresholds,
                     'created_at': run.created_at.isoformat(),
                     'started_at': run.started_at.isoformat() if run.started_at else None,
@@ -224,10 +312,30 @@ class PipelineService:
                     'human_approved': run.human_approved,
                     'published_urls': run.published_urls or [],
                     'error_message': run.error_message,
-                    'retry_count': run.retry_count
+                    'retry_count': run.retry_count,
+                    'review_session_id': str(run.review_session_id) if run.review_session_id else None
                 }
-                for run in pipeline_runs
-            ]
+                
+                # For running pipelines, try to get Redis state for real-time data
+                if run.status == 'running':
+                    try:
+                        from app.services.redis_service import redis_service
+                        redis_state = await redis_service.get_pipeline_state(str(run.id))
+                        if redis_state:
+                            # Update with real-time data from Redis
+                            if 'current_step' in redis_state:
+                                pipeline_data['current_step'] = redis_state['current_step']
+                            if 'progress_percentage' in redis_state:
+                                pipeline_data['progress_percentage'] = redis_state['progress_percentage']
+                            if 'review_session_id' in redis_state:
+                                pipeline_data['review_session_id'] = redis_state['review_session_id']
+                    except Exception as redis_error:
+                        # Continue with database data only
+                        pass
+                
+                pipeline_list.append(pipeline_data)
+            
+            return pipeline_list
             
         except Exception as e:
             logger.error(f"Failed to list pipeline runs: {e}")

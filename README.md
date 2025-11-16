@@ -1,6 +1,6 @@
 # ContentRunway - AI Content Pipeline
 
-ContentRunway is a quality-first AI content creation system that uses LangGraph to orchestrate sophisticated multi-agent workflows for producing high-quality, domain-specific content in IT/Insurance/AI domains with automated publishing to DigitalDossier.us.
+ContentRunway is a quality-first AI content creation system that uses Celery-based orchestration to manage sophisticated multi-agent workflows for producing high-quality, domain-specific content in IT/Insurance/AI domains with automated publishing to DigitalDossier.us.
 
 ## 🚀 Key Features
 
@@ -11,7 +11,7 @@ ContentRunway is a quality-first AI content creation system that uses LangGraph 
 - **Automated DigitalDossier publishing** with AI-enhanced content optimization
 
 ### 🧠 Advanced Agentic Orchestration
-- **LangGraph StateGraph** orchestration with conditional routing
+- **Celery-based** orchestration with sequential agent execution
 - **ReAct agent patterns** with OpenAI GPT-4 integration
 - **Parallel quality validation** for maximum efficiency
 - **Checkpoint system** with SQLite-based reliability
@@ -150,7 +150,7 @@ ContentRunway orchestrates **15+ specialized agents** across 8 coordinated phase
 
 ### Backend
 - **FastAPI** - High-performance Python REST API
-- **LangGraph** - Advanced agent orchestration with StateGraph
+- **Celery** - Robust task orchestration with Redis state management
 - **PostgreSQL 16** - Structured data with Row Level Security
 - **Milvus** - Vector database for intelligent knowledge base
 - **Redis** - Caching and session management
@@ -206,10 +206,10 @@ ContentRunway orchestrates **15+ specialized agents** across 8 coordinated phase
 3. **Install additional publisher dependencies**
    ```bash
    # Using uv (recommended)
-   uv add -r langgraph/requirements-publisher.txt
+   uv add -r agents/requirements-publisher.txt
    
    # Or using pip
-   pip install -r langgraph/requirements-publisher.txt
+   pip install -r agents/requirements-publisher.txt
    ```
 
 4. **Start the development environment**
@@ -265,7 +265,7 @@ ContentRunway/
 │   │   ├── app/            # App Router pages
 │   │   ├── components/     # React components
 │   │   └── lib/            # Utilities and API
-├── langgraph/              # LangGraph agents and workflows
+├── agents/                 # Agent implementations and workflows
 │   └── contentrunway/
 │       ├── agents/         # Main pipeline agents
 │       │   ├── research.py         # ResearchCoordinatorAgent
@@ -290,7 +290,7 @@ ContentRunway/
 │       ├── utils/          # Utilities
 │       │   └── publisher_logger.py           # Comprehensive logging
 │       ├── state/          # Pipeline state management
-│       └── pipeline.py     # Main LangGraph orchestrator
+│       └── state/          # Pipeline state management
 ├── docs/
 │   ├── cover-image/        # Cover image assets
 │   │   ├── blog/          # Blog category images
@@ -334,7 +334,7 @@ graph TD
 ### Specialized Research Agents
 - **🏢 IT Insurance** - Regulatory compliance, digital transformation, insurtech innovation
 - **🤖 AI Research** - Technical AI content, ML developments, LLM integrations
-- **🔗 Agentic AI** - Multi-agent systems, LangGraph workflows, agent orchestration
+- **🔗 Agentic AI** - Multi-agent systems, Celery workflows, agent orchestration
 - **💻 AI Software Engineering** - AI in development, code generation, automation
 
 ### Publishing Integration
@@ -380,7 +380,7 @@ black .          # Code formatting
 All services support hot reloading in development:
 - **Frontend**: Next.js development server with file watching
 - **Backend**: Uvicorn with `--reload` for FastAPI changes
-- **LangGraph**: Automatic agent reloading on code changes
+- **Agent Development**: Automatic agent reloading on code changes
 - **Database**: Local volume mounting for persistence
 
 ## 📊 Quality Metrics & Thresholds
@@ -401,7 +401,7 @@ All services support hot reloading in development:
 ## 🚀 Phase 1 Implementation Status
 
 ### ✅ Completed Features
-- **Multi-agent orchestration** with LangGraph StateGraph
+- **Multi-agent orchestration** with Celery task management
 - **Quality-first content pipeline** with parallel validation
 - **DigitalDossier integration** with automated publishing
 - **AI-powered content enhancement** (classification, titles, images)

@@ -8,6 +8,9 @@ from typing import Any, Optional, Dict, List, Union
 from datetime import datetime, timedelta
 import logging
 from contextlib import asynccontextmanager
+import asyncio
+import threading
+import concurrent.futures
 
 from app.core.config import settings
 
@@ -381,30 +384,90 @@ class RedisService:
             return cached_data.get("results", [])
         return None
     
+    def _run_in_thread_safe_loop(self, coro):
+        """Run async coroutine in thread-safe manner to avoid event loop conflicts."""
+        try:
+            # Check if we're in an event loop
+            loop = asyncio.get_running_loop()
+            # If we reach here, we're in an event loop, need to use thread
+            def run_in_thread():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    return new_loop.run_until_complete(coro)
+                finally:
+                    new_loop.close()
+            
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_in_thread)
+                return future.result(timeout=10)  # 10 second timeout
+                
+        except RuntimeError:
+            # No event loop running, can use asyncio.run
+            return asyncio.run(coro)
+    
     async def store_pipeline_state(
         self,
         run_id: str,
         state: Dict[str, Any]
     ) -> bool:
         """Store pipeline state for resume capability."""
-        # Store both full state and checkpoint markers
-        full_state_key = f"full_state:{run_id}"
-        checkpoint_key = f"checkpoint:{run_id}"
-        
-        # Store full state
-        state_stored = await self.set("pipeline", full_state_key, state)
-        
-        # Store lightweight checkpoint for quick status checks
-        checkpoint_data = {
-            "run_id": run_id,
-            "status": state.get("status"),
-            "current_step": state.get("current_step"),
-            "progress_percentage": state.get("progress_percentage"),
-            "updated_at": datetime.now().isoformat()
-        }
-        checkpoint_stored = await self.set("pipeline", checkpoint_key, checkpoint_data)
-        
-        return state_stored and checkpoint_stored
+        try:
+            # Store both full state and checkpoint markers
+            full_state_key = f"full_state:{run_id}"
+            checkpoint_key = f"checkpoint:{run_id}"
+            
+            # Store full state
+            state_stored = await self.set("pipeline", full_state_key, state)
+            
+            # Store lightweight checkpoint for quick status checks
+            checkpoint_data = {
+                "run_id": run_id,
+                "status": state.get("status"),
+                "current_step": state.get("current_step"),
+                "progress_percentage": state.get("progress_percentage"),
+                "updated_at": datetime.now().isoformat()
+            }
+            checkpoint_stored = await self.set("pipeline", checkpoint_key, checkpoint_data)
+            
+            return state_stored and checkpoint_stored
+        except Exception as e:
+            logger.error(f"🔧 DEBUG: store_pipeline_state failed: {e}")
+            logger.error(f"🔧 DEBUG: Attempting thread-safe Redis operation for run_id: {run_id}")
+            
+            # Fall back to direct Redis operation in thread-safe manner
+            try:
+                async def direct_redis_store():
+                    redis_url = settings.REDIS_URL
+                    redis_client = redis.from_url(redis_url)
+                    
+                    # Store full state
+                    full_state_key = f"pipeline:full_state:{run_id}"
+                    serialized_state = json.dumps(state, default=str)
+                    await redis_client.set(full_state_key, serialized_state, ex=86400)
+                    
+                    # Store checkpoint
+                    checkpoint_key = f"pipeline:checkpoint:{run_id}"
+                    checkpoint_data = {
+                        "run_id": run_id,
+                        "status": state.get("status"),
+                        "current_step": state.get("current_step"),
+                        "progress_percentage": state.get("progress_percentage"),
+                        "updated_at": datetime.now().isoformat()
+                    }
+                    serialized_checkpoint = json.dumps(checkpoint_data, default=str)
+                    await redis_client.set(checkpoint_key, serialized_checkpoint, ex=86400)
+                    
+                    await redis_client.aclose()
+                    return True
+                
+                result = self._run_in_thread_safe_loop(direct_redis_store())
+                logger.info(f"🔧 DEBUG: Thread-safe Redis operation successful for run_id: {run_id}")
+                return result
+                
+            except Exception as fallback_error:
+                logger.error(f"🔧 DEBUG: Thread-safe Redis fallback also failed: {fallback_error}")
+                return False
     
     async def get_pipeline_state(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Get full pipeline state."""

@@ -42,9 +42,10 @@ api.interceptors.response.use(
 export interface StartPipelineRequest {
   research_query: string
   domain_focus: string[]
+  target_word_count: number
   quality_thresholds: {
     overall: number
-    technical: number
+    fact_check: number
     domain_expertise: number
     style_consistency: number
     compliance: number
@@ -57,6 +58,7 @@ export interface PipelineRun {
   tenant_id: string
   status: string
   domain_focus: string[]
+  target_word_count: number
   quality_thresholds: Record<string, number>
   created_at: string
   started_at?: string
@@ -68,6 +70,7 @@ export interface PipelineRun {
   human_approved: boolean
   published_urls?: string[]
   error_message?: string
+  review_session_id?: string
 }
 
 export interface PipelineStats {
@@ -200,6 +203,111 @@ export const submitReview = async (
   }
 ): Promise<void> => {
   await api.post(`/review/${runId}/submit`, reviewData)
+}
+
+// Agent Logs API
+export interface AgentLog {
+  id: string
+  pipeline_run_id: string
+  agent_name: string
+  stage: string
+  operation: string
+  message: string
+  context?: Record<string, any>
+  level: 'INFO' | 'WARNING' | 'ERROR' | 'DEBUG'
+  timestamp: string
+  created_at: string
+}
+
+export interface AgentLogParams {
+  limit?: number
+  offset?: number
+  level?: string
+  agent_name?: string
+}
+
+export const getAgentLogs = async (
+  pipelineRunId: string,
+  params?: AgentLogParams
+): Promise<AgentLog[]> => {
+  const response = await api.get(`/agent-logs/${pipelineRunId}`, { params })
+  return response.data
+}
+
+export const deleteAgentLogs = async (pipelineRunId: string): Promise<void> => {
+  await api.delete(`/agent-logs/${pipelineRunId}`)
+}
+
+// Additional API functions for enhanced agent logs
+export interface ContentOutline {
+  id: string
+  pipeline_run_id: string
+  title: string
+  target_keywords: string[]
+  sections: any[]
+  sections_count: number
+  meta_description: string
+  estimated_reading_time: number
+  created_at: string
+}
+
+export interface ChannelContent {
+  id: string
+  pipeline_run_id: string
+  platform: string
+  title: string
+  excerpt: string
+  publication_status: string
+  published_url?: string
+  cover_image_url?: string
+  created_at: string
+}
+
+export interface Publication {
+  id: string
+  pipeline_run_id: string
+  platform: string
+  published_url: string
+  title: string
+  publication_status: string
+  published_at?: string
+  created_at: string
+}
+
+export interface CritiqueReport {
+  id: string
+  pipeline_run_id: string
+  cycle: number
+  decision: string
+  critique_text: string
+  recommendations: string[]
+  quality_score: number
+  created_at: string
+}
+
+export const getContentOutlines = async (runId: string): Promise<ContentOutline[]> => {
+  const response = await api.get(`/content/outlines/${runId}`)
+  return response.data
+}
+
+export const getChannelContent = async (runId: string): Promise<ChannelContent[]> => {
+  const response = await api.get(`/content/channels/${runId}`)
+  return response.data
+}
+
+export const getPublications = async (runId: string): Promise<Publication[]> => {
+  const response = await api.get(`/publishing/publications/${runId}`)
+  return response.data
+}
+
+export const getCritiqueReports = async (runId: string): Promise<CritiqueReport[]> => {
+  const response = await api.get(`/quality/critique/${runId}`)
+  return response.data
+}
+
+export const getHumanReviews = async (runId: string): Promise<any[]> => {
+  const response = await api.get(`/review/by-run/${runId}`)
+  return response.data
 }
 
 export default api

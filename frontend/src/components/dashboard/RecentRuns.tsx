@@ -80,6 +80,16 @@ export function RecentRuns() {
                 </div>
                 
                 <div className="flex items-center space-x-2">
+                  {/* Review notification */}
+                  {run.current_step === 'human_review_pending' && run.status === 'paused' && (
+                    <div className="flex items-center">
+                      <div className="w-2 h-2 bg-yellow-500 rounded-full mr-1 animate-pulse" />
+                      <span className="text-xs text-yellow-700 font-medium">
+                        Review Needed
+                      </span>
+                    </div>
+                  )}
+                  
                   <span className={`status-${run.status}`}>
                     {run.status}
                   </span>

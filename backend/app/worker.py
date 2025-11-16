@@ -7,6 +7,32 @@ from celery import Celery
 from celery.signals import worker_ready, worker_shutdown
 import logging
 
+# Load environment variables from .env file explicitly
+try:
+    from dotenv import load_dotenv
+    # Try loading .env from multiple possible locations
+    env_loaded = False
+    possible_paths = [
+        '.env',
+        '../.env', 
+        '/app/.env',
+        '/app/../.env'
+    ]
+    
+    for env_path in possible_paths:
+        if os.path.exists(env_path):
+            # Force override so repo .env values replace any stale host/container env
+            load_dotenv(env_path, override=True)
+            print(f"Loaded environment variables from {env_path}")
+            env_loaded = True
+            break
+    
+    if not env_loaded:
+        print("Warning: Could not find .env file, relying on system environment variables")
+        
+except ImportError:
+    print("Warning: python-dotenv not available, relying on system environment variables")
+
 from app.core.config import settings
 
 # Configure logging
