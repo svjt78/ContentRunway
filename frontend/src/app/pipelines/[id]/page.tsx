@@ -211,7 +211,7 @@ export default function PipelineRunPage() {
                 </div>
                 <div className="ml-6">
                   <Link
-                    href={`/review/session/${run.review_session_id}`}
+                    href="/content?filter=pending&highlight=true"
                     className="bg-yellow-600 text-white px-6 py-2 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 font-medium"
                   >
                     Review Content

@@ -5,10 +5,11 @@ ContentRunway is a quality-first AI content creation system that uses Celery-bas
 ## 🚀 Key Features
 
 ### 🎯 Quality-First Multi-Agent Approach
-- **15+ specialized agents** working in coordinated phases
+- **18+ specialized agents** working in coordinated phases
 - **Parallel processing** with 4 concurrent quality gates (85%+ thresholds)
 - **Human review workflow** with 15-minute approval process
 - **Automated DigitalDossier publishing** with AI-enhanced content optimization
+- **Configurable content length** (100-4000 characters) with dynamic quality scaling
 
 ### 🧠 Advanced Agentic Orchestration
 - **Celery-based** orchestration with sequential agent execution
@@ -20,9 +21,10 @@ ContentRunway is a quality-first AI content creation system that uses Celery-bas
 ### 🔬 AI-Powered Content Intelligence
 - **Content Classification**: AI-powered Blog vs Product categorization
 - **Title Optimization**: 4 variants generated, best selected automatically
-- **Cover Image Processing**: Computer vision-based text removal
+- **Cover Image Processing**: Computer vision-based text removal with DALL-E fallback generation
 - **Genre Mapping**: Intelligent content-to-genre matching
 - **PDF Generation**: Professional document creation with author attribution
+- **Quality Analytics**: Comprehensive tracking and performance metrics
 
 ### 📊 Comprehensive Publishing Pipeline
 - **DigitalDossier.us Integration**: Automated PDF publishing with metadata
@@ -32,7 +34,7 @@ ContentRunway is a quality-first AI content creation system that uses Celery-bas
 
 ## 🏗️ Agentic Workflow Architecture
 
-ContentRunway orchestrates **15+ specialized agents** across 8 coordinated phases:
+ContentRunway orchestrates **18+ specialized agents** across 10 coordinated phases:
 
 ### Phase 1: Research & Intelligence Gathering
 - **🔍 ResearchCoordinatorAgent**: Master research orchestrator
@@ -53,7 +55,8 @@ ContentRunway orchestrates **15+ specialized agents** across 8 coordinated phase
 
 ### Phase 3: Content Generation
 - **✍️ ContentWriterAgent**: Primary content creation
-  - Generates high-quality, domain-specific content
+  - Generates high-quality, domain-specific content with configurable length (100-4000 characters)
+  - Dynamic content scaling with quality requirement adjustments
   - Incorporates research findings with proper citations
   - Maintains consistent voice and style across domains
 
@@ -119,7 +122,8 @@ ContentRunway orchestrates **15+ specialized agents** across 8 coordinated phase
 
 #### Sub-Agent Cluster 2: Visual Asset Management
 - **🖼️ CoverImageAgent**: Intelligent cover image processing
-  - Category-based image selection from organized directories
+  - Category-based image selection from organized directories (`docs/cover-image/blog/`, `docs/cover-image/product/`)
+  - **DALL-E Integration**: AI-powered cover image generation when local assets unavailable
   - Computer vision-based text detection and removal
   - Fallback handling with professional placeholder generation
 
@@ -267,12 +271,12 @@ ContentRunway/
 │   │   └── lib/            # Utilities and API
 ├── agents/                 # Agent implementations and workflows
 │   └── contentrunway/
-│       ├── agents/         # Main pipeline agents
+│       ├── agents/         # 18+ specialized agents
 │       │   ├── research.py         # ResearchCoordinatorAgent
 │       │   ├── curation.py         # ContentCuratorAgent
 │       │   ├── seo.py              # SEOStrategistAgent
 │       │   ├── writing.py          # ContentWriterAgent
-│       │   ├── quality_gates.py    # Quality validation agents
+│       │   ├── quality_gates.py    # 4 Quality validation agents
 │       │   ├── editing.py          # ContentEditorAgent
 │       │   ├── critique.py         # CritiqueAgent
 │       │   ├── formatting.py       # ContentFormatterAgent
@@ -280,26 +284,35 @@ ContentRunway/
 │       │   ├── publisher.py        # PublisherAgent (DigitalDossier)
 │       │   ├── category_classifier_agent.py  # Content classification
 │       │   ├── title_generator_agent.py      # Title optimization
-│       │   └── cover_image_agent.py          # Image processing
-│       ├── tools/          # Specialized tools
+│       │   ├── cover_image_agent.py          # Image processing
+│       │   └── genre_generator_agent.py      # Genre intelligence
+│       ├── tools/          # 19+ specialized tools
 │       │   ├── digitaldossier_api_tool.py    # API integration
 │       │   ├── pdf_generator_tool.py         # PDF creation
 │       │   ├── cover_image_processor_tool.py # Image processing
 │       │   ├── content_classification_tool.py # AI classification
-│       │   └── genre_mapping_tool.py         # Genre intelligence
+│       │   ├── genre_mapping_tool.py         # Genre intelligence
+│       │   ├── dalle_image_generator_tool.py # DALL-E integration
+│       │   ├── compliance_tool.py            # Compliance validation
+│       │   ├── fact_checking.py              # Fact-checking
+│       │   ├── plagiarism_detection.py       # Plagiarism checking
+│       │   ├── pii_scanner.py                # PII detection
+│       │   ├── seo_analysis.py               # SEO analysis
+│       │   ├── technical_validation.py       # Technical validation
+│       │   └── ... (14 additional tools)
 │       ├── utils/          # Utilities
 │       │   └── publisher_logger.py           # Comprehensive logging
-│       ├── state/          # Pipeline state management
 │       └── state/          # Pipeline state management
 ├── docs/
 │   ├── cover-image/        # Cover image assets
 │   │   ├── blog/          # Blog category images
 │   │   └── product/       # Product category images
-│   └── *.md               # Documentation
-├── docker-compose.yml      # Development environment
-├── Dockerfile.backend      # Backend container with hot reload
-├── Dockerfile.frontend     # Frontend container with hot reload
-└── requirements-publisher.txt # Additional publisher dependencies
+│   └── *.md               # Technical documentation (22 files)
+├── docker-compose.yml      # Development environment (10 services)
+├── CLAUDE.md              # Primary project documentation
+├── README.md              # Project overview
+├── CONTENT_LENGTH_IMPLEMENTATION.md # Content length feature docs
+└── PIPELINE_PERSISTENCE_REDESIGN.md # Persistence improvements
 ```
 
 ## 🔄 Agent Orchestration Flow
@@ -401,14 +414,43 @@ All services support hot reloading in development:
 ## 🚀 Phase 1 Implementation Status
 
 ### ✅ Completed Features
-- **Multi-agent orchestration** with Celery task management
+- **Multi-agent orchestration** with Celery task management (18+ specialized agents)
 - **Quality-first content pipeline** with parallel validation
 - **DigitalDossier integration** with automated publishing
 - **AI-powered content enhancement** (classification, titles, images)
-- **Docker containerization** with hot reloading
+- **Configurable content length** with dynamic quality scaling (Nov 13, 2025)
+- **DALL-E image generation** for automated cover image creation
+- **Quality analytics service** with comprehensive performance tracking
+- **Docker containerization** with hot reloading (10 services)
 - **Comprehensive logging** and error handling
 - **Professional PDF generation** with cover images
 - **Computer vision** text removal from images
+- **8 database migrations** applied with schema evolution
+
+### 🆕 Recent Enhancements (November 2025)
+
+#### Configurable Content Length
+- User-specified target character count (100-4000 characters)
+- Dynamic scaling of quality requirements based on length
+- Automatic character-to-word conversion and citation scaling
+- **Documentation**: [CONTENT_LENGTH_IMPLEMENTATION.md](CONTENT_LENGTH_IMPLEMENTATION.md)
+
+#### DALL-E Integration
+- AI-powered cover image generation using OpenAI DALL-E
+- Automatic fallback when local image assets unavailable
+- Content theme-based prompt optimization
+- **Documentation**: [DALL-E_INTEGRATION_SUMMARY.md](DALL-E_INTEGRATION_SUMMARY.md)
+
+#### Quality Analytics Service
+- Real-time performance tracking across all pipeline stages
+- Agent-level quality metrics and trending analysis
+- Comprehensive analytics API endpoints for dashboards
+
+#### Pipeline Persistence Redesign (In Progress)
+- Centralized draft persistence for improved reliability
+- Shared review session management
+- Resolution of state handoff issues between agents
+- **Documentation**: [PIPELINE_PERSISTENCE_REDESIGN.md](PIPELINE_PERSISTENCE_REDESIGN.md)
 
 ### 🔮 Phase 2 (Future Enhancements)
 - Multi-tenant architecture with user management
